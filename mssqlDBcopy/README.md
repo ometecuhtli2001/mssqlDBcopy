@@ -12,19 +12,19 @@ At its simplest, you'd invoke the copier like this:
 This will copy the database lotsadata from server1 onto server2 and name it foo.
 
 ### Additional switches
-####/REPLACE
+#### /REPLACE
 Specify this if the destination already contains a database by the same name.  This will attempt to knock anyone using it off, then drop the database.
 
-/PIPESPERMS
+#### /PIPESPERMS
 This was made to simplify applying permissions to the database and is included here to show how additional permission sets for other databases would be added.  Admitedly, I took the easy way out in implementing this because I figured this would be the only set of permissions I'd have to implement.
 
-/SRC_CREDS:user:pass
+#### /SRC_CREDS:user:pass
 Specify a username and password for SQL authentication on the source instance.  BE CAREFUL ABOUT USING CREDENTIALS ON A COMMAND LINE!
 
-/DEST_CREDS:user:pass
+#### /DEST_CREDS:user:pass
 Specify a username and password for SQL authentication on the destination instance.  BE CAREFUL ABOUT USING CREDENTIALS ON A COMMAND LINE!
 
-/PATH=holding-path
+#### /PATH=holding-path
 Specify the location to hold the files while the transfer from source to destination is in progress.  This must be readable and writeable by the source and destination instances.  If you're copying on the same instance (or two instances on one host) you can specify a local drive, and it will copy pretty quick.  Note this is why there's an equal sign separating the switch from the value and not a colon like in the other parameters.
 
 ## Notes
