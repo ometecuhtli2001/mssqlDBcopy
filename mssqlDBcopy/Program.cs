@@ -32,6 +32,7 @@ namespace mssqlDBcopy
 
         private static bool setPIPESperms = false;
         private static bool dest_overwrite = false;    // Safety first!
+        private static bool debug = false;             // Debug mode (defaults to off)
 
         private static bool nop = false;    // If true, do nothing - just parse command line args and exit
         static void Main(string[] args)
@@ -46,9 +47,9 @@ namespace mssqlDBcopy
             {
                 ParseCommandLine(args);
 
-                Console.WriteLine(string.Format("SRC: user={0} pass={1} instance={2}  DB={3}", src_user, src_pass, src_instance, src_dbname));
-                Console.WriteLine(string.Format("DEST: user={0} pass={1} instance={2}  DB={3}", dest_user, dest_pass, dest_instance, dest_dbname));
-                Console.WriteLine(string.Format("Misc: replace={0} PIPES perms={1} NOP={2}", dest_overwrite.ToString(), setPIPESperms.ToString(), nop.ToString()));
+                DebugMessage(string.Format("SRC: user={0} pass={1} instance={2}  DB={3}", src_user, src_pass, src_instance, src_dbname));
+                DebugMessage(string.Format("DEST: user={0} pass={1} instance={2}  DB={3}", dest_user, dest_pass, dest_instance, dest_dbname));
+                DebugMessage(string.Format("Misc: replace={0} PIPES perms={1} NOP={2}", dest_overwrite.ToString(), setPIPESperms.ToString(), nop.ToString()));
 
                 if (!nop)
                 {
@@ -77,6 +78,13 @@ namespace mssqlDBcopy
             Console.WriteLine("Done!");
             Console.ReadKey();
         } // Main
+
+        /// <summary>Debug messages</summary>
+        /// <param name="msg"></param>
+        private static void DebugMessage(string msg)
+        {
+            if(debug) Console.WriteLine(msg);
+        } // DebugMessage
 
         /// <summary>Parse command line arguments</summary>
         /// <param name="args">Array of command line arguments</param>
@@ -124,6 +132,10 @@ namespace mssqlDBcopy
                     case "/NOP":
                         nop = true;
                         break;
+                    case "/DEBUG":
+                        debug = true;
+                        Console.WriteLine("Debug mode is now on.");
+                        break;
                 } // switch: sw
 
                 if (sw.ToUpper().StartsWith("/PATH"))
@@ -143,6 +155,8 @@ namespace mssqlDBcopy
             string ret = "";
             string d = "";
             string l = "";
+
+            DebugMessage(string.Format("GetLogicalNames({0},{1})", con.DataSource, backupfile));
 
             try
             {
@@ -175,6 +189,7 @@ namespace mssqlDBcopy
                 Message(string.Format("Error getting logical names: {0}", ex.ToString()));
             } // catch
 
+            DebugMessage(string.Format("GetLogicalNames = {0}", ret));
             return ret;
         } // GetLogicalNames
 
@@ -183,6 +198,7 @@ namespace mssqlDBcopy
         /// <param name="dest_dbname"></param>
         private static void ApplyPIPESperms(SqlConnection con, string dest_dbname)
         {
+            DebugMessage(string.Format("ApplyPIPESperms({0},{1})", con.DataSource, dest_dbname));
             Message("\tApplying PIPES permissions");
             string act = "";
             try
@@ -199,6 +215,7 @@ namespace mssqlDBcopy
                             act = "running " + sql;
                             //Message("\t\t" + act);
                             cmd.CommandText = sql;
+                            DebugMessage(string.Format("\t{0}", sql));
                             cmd.ExecuteNonQuery();
                         } // if: is SQL a blank line or comment?
                     } // foreach
@@ -215,6 +232,7 @@ namespace mssqlDBcopy
         /// <returns>TRUE=success, FALSE=error</returns>
         private static bool GetDefaultDirs(SqlConnection con)
         {
+            DebugMessage(string.Format("GetDefaultDirs({0})", con.DataSource));
             bool ret = true;
 
             try
@@ -239,7 +257,7 @@ namespace mssqlDBcopy
                 Message(string.Format("Error getting default directories: {0}", ex.ToString()));
                 ret = false;
             } // catch
-
+            DebugMessage(string.Format("GetDefaultDirs = {0}", ret.ToString()));
             return ret;
         }
 
@@ -249,6 +267,7 @@ namespace mssqlDBcopy
         /// <returns>1=yes, it has a transaction log, 0=no, there's no transaction log, -1=error</returns>
         private static int HasTLog(SqlConnection con, string src_dbname)
         {
+            DebugMessage(string.Format("HasTLog({0},{1})", con.DataSource, src_dbname));
             int ret = 0;    // Assume simple recovery model
 
             try
@@ -271,6 +290,8 @@ namespace mssqlDBcopy
                 ret = -1;
             } // catch
 
+            DebugMessage(string.Format("HasTLog = {0}", ret));
+
             return ret;
         } // HasTLog
 
@@ -281,6 +302,7 @@ namespace mssqlDBcopy
         /// <returns>Success: TRUE, errors: FALSE</returns>
         private static bool RunSQL(SqlConnection con, string sql, System.Data.CommandType type=System.Data.CommandType.Text)
         {
+            DebugMessage(string.Format("RunSQL({0},{1})", con.DataSource, sql.Substring(0,20)));
             bool ret = true;
 
             try
@@ -290,6 +312,7 @@ namespace mssqlDBcopy
                     cmd.CommandText = sql;
                     cmd.CommandType = type;
                     cmd.CommandTimeout = 600;   // 10 minutes
+                    DebugMessage(string.Format("\tCommandTimeout = {0}", cmd.CommandTimeout));
                     cmd.ExecuteNonQuery();
                 } // using: SqlCommand
             }
@@ -298,7 +321,7 @@ namespace mssqlDBcopy
                 Message(string.Format("Error running {0}\n{1}", sql, ex.ToString()));
                 ret = false;
             }
-
+            DebugMessage(string.Format("RunSQL = {0}", ret));
             return ret;
         } // RunSQL
 
@@ -309,6 +332,7 @@ namespace mssqlDBcopy
         /// <param name="dest_dbname"></param>
         private static void CopyDatabase(SqlConnection src_con, string src_dbname, SqlConnection dest_con, string dest_dbname)
         {
+            DebugMessage(string.Format("CopyDatabase({0},{1},{2},{3})", src_con.DataSource,src_dbname,dest_con.DataSource,dest_dbname));
             bool ok = true;
 
             // Make a copy-only backup of the source database
