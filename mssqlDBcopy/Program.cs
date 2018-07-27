@@ -28,7 +28,7 @@ namespace mssqlDBcopy
         private static string logicalname_d = "";   // Logical name of database file
         private static string logicalname_l = "";   // Logcial name of transaction log file
 
-        private static string holdingpath = @"\\devwebprivate3\sQL_Share\OUT";     // Where to put the backup files during transfer from source -> destination
+        private static string holdingpath = @"\\devwebprivate3.sandist.co.clark.nv.us\sQL_Share\OUT";     // Where to put the backup files during transfer from source -> destination
 
         private static bool setPIPESperms = false;
         private static bool dest_overwrite = false;    // Safety first!
@@ -371,20 +371,23 @@ namespace mssqlDBcopy
                 try
                 {
                     Message("\tDatabase");
-                    SqlCommand cmd = dest_con.CreateCommand();
-                    cmd.CommandText = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  REPLACE,  STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname,logicalname_d,logicalname_l,holdingpath);
-                    cmd.ExecuteNonQuery();
+                    //SqlCommand cmd = dest_con.CreateCommand();
+                    //cmd.CommandText = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  REPLACE,  STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname,logicalname_d,logicalname_l,holdingpath);
+                    //cmd.ExecuteNonQuery();
+                    RunSQL(dest_con, string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  REPLACE,  STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, logicalname_d, logicalname_l, holdingpath));
 
                     if (backuplog == 1)
                     {
                         Message("\tTransaction log");
-                        cmd.CommandText = string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{4}\{3}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, holdingpath);
-                        cmd.ExecuteNonQuery();
+                        RunSQL(dest_con, string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{4}\{3}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, holdingpath));
+                        //cmd.CommandText = string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{4}\{3}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, holdingpath);
+                        //cmd.ExecuteNonQuery();
                     } // if: has transaction log?
 
                     Message("\tSet multiuser");
-                    cmd.CommandText = string.Format(@"ALTER DATABASE[{0}] SET MULTI_USER", dest_dbname);
-                    cmd.ExecuteNonQuery();
+                    RunSQL(dest_con, string.Format(@"ALTER DATABASE[{0}] SET MULTI_USER", dest_dbname));
+                    //cmd.CommandText = string.Format(@"ALTER DATABASE[{0}] SET MULTI_USER", dest_dbname);
+                    //cmd.ExecuteNonQuery();
 
                     // Clean up after ourselves
                     System.IO.File.Delete(string.Format(@"{0}\{1}.bak",holdingpath, src_dbname));
