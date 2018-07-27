@@ -11,6 +11,8 @@ At its simplest, you'd invoke the copier like this:
 	mssqlDBcopy server1:lotsadata server2:foo
 This will copy the database lotsadata from server1 onto server2 and name it foo.
 
+Note while the database names are not case-sensitive, case is preserved for the destination name.
+
 ### Additional switches
 #### /REPLACE
 Specify this if the destination already contains a database by the same name.  This will attempt to knock anyone using it off, then drop the database.
@@ -32,3 +34,5 @@ If you don't specify credentials, the program will use your current credentials 
 
 ## How it works
 Basically, it cheats.  The utility makes a copy-only backup of the source database, copies it over to the destination instance, and restores it.  Yes, you can do this all yourself, but it's cumbersome and if you have very active developers like I do, you'll be doing this all day long.  Now there's a semi-automated solution, and developers don't have to stop working on the source database while you make the copy!
+
+Note that pre-existing backup files will be overwritten by this utility!  Because of this, choose your /PATH setting carefully!

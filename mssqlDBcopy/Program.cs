@@ -193,6 +193,7 @@ namespace mssqlDBcopy
             return ret;
         } // GetLogicalNames
 
+        #region "Permission sets"
         /// <summary>Apply PIPES permissions to users of the new database</summary>
         /// <param name="con"></param>
         /// <param name="dest_dbname"></param>
@@ -226,6 +227,7 @@ namespace mssqlDBcopy
                 Message(string.Format("Error {0}: {1}", act, ex.ToString()));
             } // catch
         } // ApplyPIPESperms
+        #endregion
 
         /// <summary>Get default MDF and LDF directories</summary>
         /// <param name="con"></param>
@@ -276,8 +278,9 @@ namespace mssqlDBcopy
                 {
                     cmd.CommandText = string.Format("SELECT recovery_model_desc FROM master.sys.databases WHERE name='{0}'",src_dbname);
                     object value=cmd.ExecuteScalar();
-                    switch (value.ToString().ToUpper())
+                    switch (value.ToString().ToUpper()) // Use a switch to make handling multiple possible values and future expansion easier
                     {
+                        case "BULK_LOGGED":
                         case "FULL":
                             ret = 1;
                             break;
@@ -335,14 +338,19 @@ namespace mssqlDBcopy
             DebugMessage(string.Format("CopyDatabase({0},{1},{2},{3})", src_con.DataSource,src_dbname,dest_con.DataSource,dest_dbname));
             bool ok = true;
 
+            string sql = "";
+
             // Make a copy-only backup of the source database
             Message("Get copy of source DB (MDF)");
-            if (!RunSQL(src_con, string.Format(@"BACKUP DATABASE [{0}] TO DISK = N'{2}\{0}.bak' WITH COPY_ONLY, NOFORMAT, NOINIT, NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance,holdingpath)))
+            if (!RunSQL(src_con, string.Format(@"BACKUP DATABASE [{0}] TO DISK = N'{2}\{0}.bak' WITH COPY_ONLY, FORMAT, INIT, NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance,holdingpath)))
                 ok = false;
-            if (ok && (backuplog==1))
+
+            if (ok && (backuplog == 1))
+            {
                 Message("Get copy of source DB (LDF)");
-                if (!RunSQL(src_con, string.Format(@"BACKUP LOG [{0}] TO  DISK = N'{2}\{0}.bak' WITH  COPY_ONLY, NOFORMAT, NOINIT,  NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance,holdingpath)))
+                if (!RunSQL(src_con, string.Format(@"BACKUP LOG [{0}] TO  DISK = N'{2}\{0}.bak' WITH  COPY_ONLY, NOFORMAT, NOINIT,  NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance, holdingpath)))
                     ok = false;
+            } // if: okay and there's a transaction log?
 
             if (ok)
             {
@@ -374,7 +382,17 @@ namespace mssqlDBcopy
                     //SqlCommand cmd = dest_con.CreateCommand();
                     //cmd.CommandText = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  REPLACE,  STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname,logicalname_d,logicalname_l,holdingpath);
                     //cmd.ExecuteNonQuery();
-                    RunSQL(dest_con, string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  REPLACE,  STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, logicalname_d, logicalname_l, holdingpath));
+
+                    sql = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  !REPL!STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, logicalname_d, logicalname_l, holdingpath);
+                    if (dest_overwrite)
+                    {    // Don't use REPLACE if we're not actually replacing a database!
+                        sql = sql.Replace("!REPL!", "REPLACE, ");
+                    } else
+                    {
+                        sql = sql.Replace("!REPL!", "");
+                    } // if..else: use REPLACE?
+                    if (backuplog != 1) sql = sql.Replace(", NORECOVERY,", ", RECOVERY,"); // No transaction log, so this is the only RESTORE to run
+                    RunSQL(dest_con, sql);
 
                     if (backuplog == 1)
                     {
