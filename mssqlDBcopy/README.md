@@ -27,7 +27,7 @@ Specify a username and password for SQL authentication on the source instance.  
 Specify a username and password for SQL authentication on the destination instance.  BE CAREFUL ABOUT USING CREDENTIALS ON A COMMAND LINE!
 
 #### /PATH=holding-path
-Specify the location to hold the files while the transfer from source to destination is in progress.  This must be readable and writeable by the source and destination instances.  If you're copying on the same instance (or two instances on one host) you can specify a local drive, and it will copy pretty quick.  Note this is why there's an equal sign separating the switch from the value and not a colon like in the other parameters.
+Specify the location to hold the files while the transfer from source to destination is in progress.  This must be writable by the source instance and readable by the destination instance.  If you're copying on the same instance (or two instances on one host) you can specify a local drive, and it will copy pretty quick.  Note this is why there's an equal sign separating the switch from the value and not a colon like in the other parameters.  If you use this utility often enough, consider setting the MSSQLDBCOPY_HOLDINGPATH environment variable instead.  This switch will override the value of the MSSQLDBCOPY_HOLDINGPATH variable.
 
 ## Notes
 If you don't specify credentials, the program will use your current credentials and pass them on to the source or destination.  Note you do not have to specify credentials for BOTH - you can do one, the other, both, or neither.

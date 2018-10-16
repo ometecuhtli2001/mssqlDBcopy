@@ -28,7 +28,7 @@ namespace mssqlDBcopy
         private static string logicalname_d = "";   // Logical name of database file
         private static string logicalname_l = "";   // Logcial name of transaction log file
 
-        private static string holdingpath = @"\\devwebprivate3.sandist.co.clark.nv.us\sQL_Share\OUT";     // Where to put the backup files during transfer from source -> destination
+        private static string holdingpath = "";     // Where to put the backup files during transfer from source -> destination
 
         private static bool setPIPESperms = false;
         private static bool dest_overwrite = false;    // Safety first!
@@ -45,7 +45,26 @@ namespace mssqlDBcopy
             }
             else
             {
+                // Get settings from environment variables
+                try
+                {
+                    if (Environment.GetEnvironmentVariable("MSSQLDBCOPY_HOLDINGPATH") != null) holdingpath = Environment.GetEnvironmentVariable("MSSQLDBCOPY_HOLDINGPATH");
+                }
+                catch(Exception ex)
+                {
+                    Message(string.Format("WARNING: There was a problem checking on or retrieving the MSSQLDBCOPY_HOLDINGPATH environment variable: {0}", ex.ToString()));
+                }
+
+                // Now parse command line arguments, which can override environment variables
                 ParseCommandLine(args);
+
+                if (holdingpath == "")
+                {
+                    Message("ERROR: There is no holding path for the files to stay during the transfer.  This utility cannot continue.  Please use the /PATH switch or set the MSSQLDBCOPY_HOLDINGPATH environment variable.");
+                    nop = true;
+                } // if: is there a holding path?
+
+                if (holdingpath.EndsWith(@"\")) holdingpath = holdingpath.Trim('\\');   // Remove trailing back slash from holding path
 
                 DebugMessage(string.Format("SRC: user={0} pass={1} instance={2}  DB={3}", src_user, src_pass, src_instance, src_dbname));
                 DebugMessage(string.Format("DEST: user={0} pass={1} instance={2}  DB={3}", dest_user, dest_pass, dest_instance, dest_dbname));
