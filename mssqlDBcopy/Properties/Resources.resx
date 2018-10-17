@@ -125,7 +125,7 @@ alter user [pipes_reports] with login=[pipes_reports]
 alter user [sandist\aaraujo] with login=[sandist\aaraujo]
 alter user [sandist\bwood] with login=[sandist\bwood]
 alter user [sandist\mlimjuico] with login=[sandist\mlimjuico]
-alter user [sandist\mhripko] with login=[sandist\mhripko]
+--alter user [sandist\mhripko] with login=[sandist\mhripko]
 
 -- Preserve access for developer accounts after the refresh, which contains production-level access
 ALTER ROLE [db_datareader] ADD MEMBER [sandist\aaraujo]
@@ -143,10 +143,10 @@ ALTER ROLE [db_datawriter] ADD MEMBER [sandist\mlimjuico]
 ALTER ROLE [db_ddladmin] ADD MEMBER [sandist\mlimjuico]
 ALTER ROLE [execute_stuff] ADD MEMBER [sandist\mlimjuico]
 
-ALTER ROLE [db_datareader] ADD MEMBER [sandist\mhripko]
-ALTER ROLE [db_datawriter] ADD MEMBER [sandist\mhripko]
-ALTER ROLE [db_ddladmin] ADD MEMBER [sandist\mhripko]
-ALTER ROLE [execute_stuff] ADD MEMBER [sandist\mhripko]
+-- ALTER ROLE [db_datareader] ADD MEMBER [sandist\mhripko]
+-- ALTER ROLE [db_datawriter] ADD MEMBER [sandist\mhripko]
+-- ALTER ROLE [db_ddladmin] ADD MEMBER [sandist\mhripko]
+-- ALTER ROLE [execute_stuff] ADD MEMBER [sandist\mhripko]
 
 -- A role for allowing devs to get query execution plans
 --create role show_plan;
@@ -155,6 +155,6 @@ ALTER ROLE [execute_stuff] ADD MEMBER [sandist\mhripko]
 EXEC sp_addrolemember N'show_plan', N'sandist\aaraujo'
 EXEC sp_addrolemember N'show_plan', N'sandist\bwood'
 EXEC sp_addrolemember N'show_plan', N'sandist\mlimjuico'
-EXEC sp_addrolemember N'show_plan', N'sandist\mhripko'</value>
+-- EXEC sp_addrolemember N'show_plan', N'sandist\mhripko'</value>
   </data>
 </root>

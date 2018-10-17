@@ -68,10 +68,10 @@ namespace mssqlDBcopy.Properties {
         ///alter user [sandist\aaraujo] with login=[sandist\aaraujo]
         ///alter user [sandist\bwood] with login=[sandist\bwood]
         ///alter user [sandist\mlimjuico] with login=[sandist\mlimjuico]
-        ///alter user [sandist\mhripko] with login=[sandist\mhripko]
+        ///--alter user [sandist\mhripko] with login=[sandist\mhripko]
         ///
         ///-- Preserve access for developer accounts after the refresh, which contains production-level access
-        ///ALTER ROLE [db_d [rest of string was truncated]&quot;;.
+        ///ALTER ROLE [db [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string PIPESperms {
             get {

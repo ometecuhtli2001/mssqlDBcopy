@@ -19,16 +19,23 @@ namespace mssqlDBcopy
         private static string dest_user = "";   // Blank if using current user context (default)
         private static string dest_pass = "";
 
-        private static SqlConnection src_con;
-        private static SqlConnection dest_con;
+        private static SqlConnection src_con;   // Source instance connection
+        private static SqlConnection dest_con;  // Target instance connection
 
-        private static string MDFdir = "";
-        private static string LDFdir = "";
-        private static int backuplog = 0;
+        private static string MDFdir = "";      // Where source MDF file(s) live
+        private static string LDFdir = "";      // Where source LDF file(s) live
+        private static int backuplog = 0;       // Flag indicating if there's a transaction log for the specified DB
         private static string logicalname_d = "";   // Logical name of database file
         private static string logicalname_l = "";   // Logcial name of transaction log file
 
+        /* Separate variables for the holding path because the source and destination instances can refer to the same place 
+         * in different ways.  Note that if an instance is on Linux, and the holding area is not local to that box, it must
+         * already be mounted before running this utility.
+         */
         private static string holdingpath = "";     // Where to put the backup files during transfer from source -> destination
+        private static string src_holdingpath = "";     // How to reference holding area in source instance
+        private static string dest_holdingpath = "";    // How to reference holding area in destination instance
+
 
         private static bool setPIPESperms = false;
         private static bool dest_overwrite = false;    // Safety first!
@@ -40,31 +47,49 @@ namespace mssqlDBcopy
             if (args.Length < 2)
             {
                 Console.WriteLine("Please specify a source instance and database followed by a target instance and database. Options come after that.");
-                Console.WriteLine("\tmssqldbcopy source-instance:database target-instance:database [/REPLACE|/PIPESPERMS][/SRC_CREDS:user:pass][/DEST_CREDS:user:pass][/PATH=holding-path]");
+                Console.WriteLine("\tmssqldbcopy source-instance:database target-instance:database [/REPLACE|/PIPESPERMS][/SRC_CREDS:user:pass][/DEST_CREDS:user:pass][[/PATH=holding-path]|[/SRC_PATH=source-holding-path /DEST_PATH=destination-holding-path]]");
+                Console.WriteLine();
+                Console.WriteLine("Note if you specify /PATH applied to both source and destination, so you cannot specify /SRC_PATH or /DEST_PATH with /PATH.  Likewise, /SRC_PATH and /DEST_PATH go together - you must specify both, and then you cannot use /PATH.");
                 Console.WriteLine();
             }
             else
             {
+                string act = "";
                 // Get settings from environment variables
                 try
                 {
+                    act = "MSSQLDBCOPY_HOLDINGPATH";
                     if (Environment.GetEnvironmentVariable("MSSQLDBCOPY_HOLDINGPATH") != null) holdingpath = Environment.GetEnvironmentVariable("MSSQLDBCOPY_HOLDINGPATH");
+                    act = "MSSQLDBCOPY_SRC_HOLDINGPATH";
+                    if (Environment.GetEnvironmentVariable("MSSQLDBCOPY_SRC_HOLDINGPATH") != null) src_holdingpath = Environment.GetEnvironmentVariable("MSSQLDBCOPY_SRC_HOLDINGPATH");
+                    act = "MSSQLDBCOPY_DEST_HOLDINGPATH";
+                    if (Environment.GetEnvironmentVariable("MSSQLDBCOPY_DEST_HOLDINGPATH") != null) dest_holdingpath = Environment.GetEnvironmentVariable("MSSQLDBCOPY_DEST_HOLDINGPATH");
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
-                    Message(string.Format("WARNING: There was a problem checking on or retrieving the MSSQLDBCOPY_HOLDINGPATH environment variable: {0}", ex.ToString()));
+                    Message(string.Format("WARNING: There was a problem checking on or retrieving the {0} environment variable: {1}",act, ex.ToString()));
                 }
 
                 // Now parse command line arguments, which can override environment variables
                 ParseCommandLine(args);
 
-                if (holdingpath == "")
+
+                /* Go through settings (not that they should be set) and check for sanity */
+
+                // Check holding path settings - SRC_PATH and DEST_PATH will override PATH and environment variables
+                if ((holdingpath == "") && ((src_holdingpath =="") || (dest_holdingpath =="")))
                 {
-                    Message("ERROR: There is no holding path for the files to stay during the transfer.  This utility cannot continue.  Please use the /PATH switch or set the MSSQLDBCOPY_HOLDINGPATH environment variable.");
+                    Message("ERROR: Please use either /PATH or both /SRC_PATH and /DEST_PATH to specify a holding path for the files to stay during the transfer.");
                     nop = true;
                 } // if: is there a holding path?
 
-                if (holdingpath.EndsWith(@"\")) holdingpath = holdingpath.Trim('\\');   // Remove trailing back slash from holding path
+                // No source and destination holding paths specified, so use PATH for both
+                if ((holdingpath != "") && (src_holdingpath == "") && (dest_holdingpath == ""))
+                {
+                    if (holdingpath.EndsWith(@"\")) holdingpath = holdingpath.Trim('\\');   // Remove trailing back slash from holding path
+                    src_holdingpath = holdingpath;
+                    dest_holdingpath = holdingpath;
+                } // if: is holdingpath empty?
 
                 DebugMessage(string.Format("SRC: user={0} pass={1} instance={2}  DB={3}", src_user, src_pass, src_instance, src_dbname));
                 DebugMessage(string.Format("DEST: user={0} pass={1} instance={2}  DB={3}", dest_user, dest_pass, dest_instance, dest_dbname));
@@ -157,12 +182,24 @@ namespace mssqlDBcopy
                         break;
                 } // switch: sw
 
-                if (sw.ToUpper().StartsWith("/PATH"))
+                foreach(string arg in new string[] {"/PATH","/SRC_PATH","/DEST_PATH" })
                 {
-                    holdingpath = sw.Split('=')[1];
-                } // if: holding path specified?
+                    if (sw.ToUpper().StartsWith(arg))
+                    {
+                        switch (arg)
+                        {
+                            case "/PATH": holdingpath = sw.Split('=')[1];
+                                break;
+                            case "/SRC_PATH":
+                                src_holdingpath = sw.Split('=')[1];
+                                break;
+                            case "/DEST_PATH":
+                                dest_holdingpath = sw.Split('=')[1];
+                                break;
+                        } // switch: which path
+                    } // if: holding path specified?
+                } // foreach: iterate over arguments which use an = instead of a colon
             } // foreach: iterate over parameters
-
         } // ParseCommandLine
 
         /// <summary>Returns the logical names for database and transaction log</summary>
@@ -361,19 +398,19 @@ namespace mssqlDBcopy
 
             // Make a copy-only backup of the source database
             Message("Get copy of source DB (MDF)");
-            if (!RunSQL(src_con, string.Format(@"BACKUP DATABASE [{0}] TO DISK = N'{2}\{0}.bak' WITH COPY_ONLY, FORMAT, INIT, NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance,holdingpath)))
+            if (!RunSQL(src_con, string.Format(@"BACKUP DATABASE [{0}] TO DISK = N'{2}\{0}.bak' WITH COPY_ONLY, FORMAT, INIT, NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance,src_holdingpath)))
                 ok = false;
 
             if (ok && (backuplog == 1))
             {
                 Message("Get copy of source DB (LDF)");
-                if (!RunSQL(src_con, string.Format(@"BACKUP LOG [{0}] TO  DISK = N'{2}\{0}.bak' WITH  COPY_ONLY, NOFORMAT, NOINIT,  NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance, holdingpath)))
+                if (!RunSQL(src_con, string.Format(@"BACKUP LOG [{0}] TO  DISK = N'{2}\{0}.bak' WITH  COPY_ONLY, NOFORMAT, NOINIT,  NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance, src_holdingpath)))
                     ok = false;
             } // if: okay and there's a transaction log?
 
             if (ok)
             {
-                string tmp = GetLogicalNames(src_con, string.Format(@"{0}\{1}.bak",holdingpath, src_dbname));
+                string tmp = GetLogicalNames(src_con, string.Format(@"{0}\{1}.bak",src_holdingpath, src_dbname));
                 if (tmp != "")
                 {
                     if (tmp.Contains("|"))
@@ -402,7 +439,7 @@ namespace mssqlDBcopy
                     //cmd.CommandText = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  REPLACE,  STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname,logicalname_d,logicalname_l,holdingpath);
                     //cmd.ExecuteNonQuery();
 
-                    sql = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  !REPL!STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, logicalname_d, logicalname_l, holdingpath);
+                    sql = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  !REPL!STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, logicalname_d, logicalname_l, dest_holdingpath);
                     if (dest_overwrite)
                     {    // Don't use REPLACE if we're not actually replacing a database!
                         sql = sql.Replace("!REPL!", "REPLACE, ");
@@ -416,7 +453,7 @@ namespace mssqlDBcopy
                     if (backuplog == 1)
                     {
                         Message("\tTransaction log");
-                        RunSQL(dest_con, string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{4}\{3}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, holdingpath));
+                        RunSQL(dest_con, string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{4}\{3}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, dest_holdingpath));
                         //cmd.CommandText = string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{4}\{3}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, holdingpath);
                         //cmd.ExecuteNonQuery();
                     } // if: has transaction log?
@@ -427,7 +464,9 @@ namespace mssqlDBcopy
                     //cmd.ExecuteNonQuery();
 
                     // Clean up after ourselves
-                    System.IO.File.Delete(string.Format(@"{0}\{1}.bak",holdingpath, src_dbname));
+                    System.IO.File.Delete(string.Format(@"{0}\{1}.bak",src_holdingpath, src_dbname));
+                    if(System.IO.File.Exists(string.Format(@"{0}\{1}.bak", dest_holdingpath, dest_dbname)))
+                        System.IO.File.Delete(string.Format(@"{0}\{1}.bak", dest_holdingpath, dest_dbname));
 
                     // Extras
                     if (setPIPESperms) ApplyPIPESperms(dest_con, dest_dbname);
