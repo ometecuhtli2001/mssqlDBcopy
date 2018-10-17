@@ -9,6 +9,10 @@ Basically, it cheats.  The utility makes a copy-only backup of the source databa
 
 Note that pre-existing backup files will be overwritten by this utility!  Because of this, choose your holding path settings carefully!
 
+## Notes
+This was written using Visual Studio 2017.
+The utility will say Done! when it's done, then wait for a keypress.  I did this so I could actually see the output while running from Visual Studio.  I'm working on adding awareness as to whether it's running from Visual Studio or directly from the command line, and if from the command line it will not wait for a keypress.
+
 ## Arguments
 On the command line, you specify a source instance and database followed by a target instance and database, with options after that.  Source and destination instance and database are each separated by a colon, so you have source-instance:source-database target-instance:target-database
 
