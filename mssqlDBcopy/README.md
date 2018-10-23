@@ -16,18 +16,16 @@ The utility will say Done! when it's done, then wait for a keypress.  I did this
 ## Arguments
 On the command line, you specify a source instance and database followed by a target instance and database, with options after that.  Source and destination instance and database are each separated by a colon, so you have source-instance:source-database target-instance:target-database
 
-At its simplest, you'd invoke the copier like this:
-	mssqlDBcopy server1:lotsadata server2:foo
-This will copy the database lotsadata from server1 onto server2 and name it foo.
+At its simplest, you'd invoke the copier like this: `mssqlDBcopy server1:lotsadata server2:foo`  This will copy the database lotsadata from server1 onto server2 and name it foo.
 
-Note while the database names are not case-sensitive, case is preserved for the destination name.
+Note while the database names are not case-sensitive, case is preserved (appearance-wise) for the destination name.
 
 If you're copying a database from a Windows-based SQL Server instance to a Linux-based SQL Server instance, there are some considerations to take into account.  The following switches were built into this utility with those considerations.  Specifically:
 * Linux refers to file system locations differently than Windows
 * SQL Server for Linux only supports SQL authentication
 
 As an example of copying a database from a Windows-based SQL Server instance to a Linux-based SQL Server instance, consider:
-mssqlDBcopy dbbox01:aqc lbox:AQC /src_path=\\interchange\e$  /dest_path=/media/interchange /debug /dest_creds:sa:Password!
+`mssqlDBcopy dbbox01:aqc lbox:AQC /src_path=\\interchange\e$  /dest_path=/media/interchange /debug /dest_creds:sa:Password!`
 
 This takes into account the different ways Windows and Linux refer to the same share on the network (note /media/interchange would already have to be mounted to \\interchange\e$ before running this!) as well as the fact that the Windows-based SQL instance can use Windows authentication and the Linux-based instance cannot.  Read on for further details about the individual command line switches.
 
