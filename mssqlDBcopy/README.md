@@ -12,7 +12,7 @@ Note that pre-existing backup files will be overwritten by this utility!  Becaus
 ## Where it works
 Tested and used many times in production on Windows 10.
 Tested a couple times on Linux.  I'm using Ubuntu 16.04, running mono 4.6.2.7.  Here's a screen capture of a sample run (the command line to invoke mssqlDBcopy is in a script called sc so passwords don't end up in the history file):
-![An example of mssqlDBcopy running on Linux](/images/mssqlDBcopy%20on%20Linux.png)
+![An example of mssqlDBcopy running on Linux](https://raw.githubusercontent.com/ometecuhtli2001/mssqlDBcopy/master/mssqlDBcopy/images/mssqlDBcopy%20on%20Linux.png)
 
 ## Notes
 This was written using Visual Studio 2017.
@@ -63,3 +63,5 @@ Specify how the source instance should refer to the location used for holding th
 Specify how the destination instance should refer to the location used for holding the files while the transfer from source to destination is in progress.  This must be readable by the destination instance. If you use this utility often enough, consider setting the MSSQLDBCOPY_DEST_HOLDINGPATH environment variable instead.  This switch will override the value of the /PATH switch as well as the holding path environment variables.
 
 
+## If you've made it this far...
+Feel free to contact me with questions, problems, etc.  Note, however, that I may not be able to help as much as you would want...  I'm not familiar with all system configurations, and there are some which may not be compatible with this utility.  Also, there are only so many things I can do to help when I don't have access to your computer.  I also have limited time because I've got this, other projects, a job, and other responsibilities.  
