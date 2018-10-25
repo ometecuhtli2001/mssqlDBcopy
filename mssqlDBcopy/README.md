@@ -9,6 +9,11 @@ Basically, it cheats.  The utility makes a copy-only backup of the source databa
 
 Note that pre-existing backup files will be overwritten by this utility!  Because of this, choose your holding path settings carefully!
 
+## Where it works
+Tested and used many times in production on Windows 10.
+Tested a couple times on Linux.  I'm using Ubuntu 16.04, running mono 4.6.2.7.  Here's a screen capture of a sample run (the command line to invoke mssqlDBcopy is in a script called sc so passwords don't end up in the history file):
+![An example of mssqlDBcopy running on Linux](/images/mssqlDBcopy%20on%20Linux.png)
+
 ## Notes
 This was written using Visual Studio 2017.
 The utility will say Done! when it's done, then wait for a keypress.  I did this so I could actually see the output while running from Visual Studio.  I'm working on adding awareness as to whether it's running from Visual Studio or directly from the command line, and if from the command line it will not wait for a keypress.
