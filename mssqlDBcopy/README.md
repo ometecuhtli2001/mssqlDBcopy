@@ -16,7 +16,7 @@ Tested a couple times on Linux.  I'm using Ubuntu 16.04, running mono 4.6.2.7.  
 
 ## Notes
 This was written using Visual Studio 2017.
-The utility will say Done! when it's done, then wait for a keypress.  I did this so I could actually see the output while running from Visual Studio.  I'm working on adding awareness as to whether it's running from Visual Studio or directly from the command line, and if from the command line it will not wait for a keypress.
+If running from a debugger, the utility will say `Done!` when it's done, then wait for a keypress.  I did this so I could actually see the output while running from Visual Studio.
 
 ## Arguments
 On the command line, you specify a source instance and database followed by a target instance and database, with options after that.  Source and destination instance and database are each separated by a colon, so you have source-instance:source-database target-instance:target-database
