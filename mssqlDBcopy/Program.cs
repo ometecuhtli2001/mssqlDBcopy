@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Data.SqlClient;
+using System.Diagnostics;
 
 namespace mssqlDBcopy
 {
@@ -42,8 +43,10 @@ namespace mssqlDBcopy
         private static bool debug = false;             // Debug mode (defaults to off)
 
         private static bool nop = false;    // If true, do nothing - just parse command line args and exit
-        static void Main(string[] args)
+        static int Main(string[] args)
         {
+            int ret = 0;    // Be optimistic
+
             if (args.Length < 2)
             {
                 Console.WriteLine("Please specify a source instance and database followed by a target instance and database. Options come after that.");
@@ -79,6 +82,7 @@ namespace mssqlDBcopy
                 // Check holding path settings - SRC_PATH and DEST_PATH will override PATH and environment variables
                 if ((holdingpath == "") && ((src_holdingpath =="") || (dest_holdingpath =="")))
                 {
+                    ret = 100;
                     Message("ERROR: Please use either /PATH or both /SRC_PATH and /DEST_PATH to specify a holding path for the files to stay during the transfer.");
                     nop = true;
                 } // if: is there a holding path?
@@ -109,25 +113,40 @@ namespace mssqlDBcopy
                                 {
                                     if (dest_overwrite)
                                     {
-                                        if (DropDestDB(dest_con, dest_dbname)) CopyDatabase(src_con, src_dbname, dest_con, dest_dbname);
+                                        if (DropDestDB(dest_con, dest_dbname))
+                                        {
+                                            if(CopyDatabase(src_con, src_dbname, dest_con, dest_dbname)>0) ret=500;
+                                        }
+                                        else
+                                        {
+                                            ret = 400;
+                                        } // if..else: problem dropping destination DB?
                                     }
                                     else
                                     {
-                                        CopyDatabase(src_con, src_dbname, dest_con, dest_dbname);
+                                        if(CopyDatabase(src_con, src_dbname, dest_con, dest_dbname)>0) ret=500;
                                     } // if..else: overwrite destination?
                                 } // if: got default directories on dest instance?
-                            } // if: got transaction log info?
+                            } else {
+                                ret = 300;  // Problem with checking on transaction log
+                            } // if..else: got transaction log info?
                         }
                         else
                         {
+                            ret = 200;
                             Message(string.Format("Database {0} does not exist in instance {1}, or there was an error checking on it. If there were problems, there should be an error message above this message.", src_dbname, src_instance));
                         } // if..else: does source DB exist?
                     } // if: connected?
                 } // if: to do stuff or not to do stuff
             } // if..else: proper parameter count?
 
-            Console.WriteLine("Done!");
-            Console.ReadKey();
+            if (Debugger.IsAttached)
+            {
+                Console.WriteLine("Done!");
+                Console.ReadKey();
+            } // if: debugging?
+
+            return ret; // Return an errorcode to the caller
         } // Main
 
         /// <summary>Check if the source database exists</summary>
@@ -427,8 +446,11 @@ namespace mssqlDBcopy
         /// <param name="src_dbname"></param>
         /// <param name="dest_con"></param>
         /// <param name="dest_dbname"></param>
-        private static void CopyDatabase(SqlConnection src_con, string src_dbname, SqlConnection dest_con, string dest_dbname)
+        /// <returns>0=success, non-zero indicates an error</returns>
+        private static int CopyDatabase(SqlConnection src_con, string src_dbname, SqlConnection dest_con, string dest_dbname)
         {
+            int ret = 0;    // Be optimistic!
+
             DebugMessage(string.Format("CopyDatabase({0},{1},{2},{3})", src_con.DataSource,src_dbname,dest_con.DataSource,dest_dbname));
             bool ok = true;
 
@@ -436,14 +458,22 @@ namespace mssqlDBcopy
 
             // Make a copy-only backup of the source database
             Message("Get copy of source DB (MDF)");
-            if (!RunSQL(src_con, string.Format(@"BACKUP DATABASE [{0}] TO DISK = N'{2}\{0}.bak' WITH COPY_ONLY, FORMAT, INIT, NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance,src_holdingpath)))
+            if (!RunSQL(src_con, string.Format(@"BACKUP DATABASE [{0}] TO DISK = N'{2}\{0}.bak' WITH COPY_ONLY, FORMAT, INIT, NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance, src_holdingpath)))
+            {
                 ok = false;
+                ret = 1;
+            } // if: database backup successful?
+                
 
             if (ok && (backuplog == 1))
             {
                 Message("Get copy of source DB (LDF)");
                 if (!RunSQL(src_con, string.Format(@"BACKUP LOG [{0}] TO  DISK = N'{2}\{0}.bak' WITH  COPY_ONLY, NOFORMAT, NOINIT,  NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance, src_holdingpath)))
+                {
                     ok = false;
+                    ret = 2;
+                } // if: log backup ok?
+                    
             } // if: okay and there's a transaction log?
 
             if (ok)
@@ -464,6 +494,7 @@ namespace mssqlDBcopy
                 else
                 {
                     ok = false;
+                    ret = 3;    // Logical names not obtained successfully
                 } // if..else: got logical names?
             } // if: okay to obtain logical names?
 
@@ -512,9 +543,12 @@ namespace mssqlDBcopy
                 } // try
                 catch (Exception ex)
                 {
+                    ret = 100;  // General exception
                     Message("Error restoring destination database: " + ex.ToString());
                 } // catch
             } // if: is ok?
+
+            return ret;
         } // CopyDatabase
 
         /// <summary>Drop the specified database on the given instance</summary>
