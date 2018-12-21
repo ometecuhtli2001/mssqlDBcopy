@@ -91,8 +91,8 @@ namespace mssqlDBcopy
                     dest_holdingpath = holdingpath;
                 } // if: is holdingpath empty?
 
-                DebugMessage(string.Format("SRC: user={0} pass={1} instance={2}  DB={3}", src_user, src_pass, src_instance, src_dbname));
-                DebugMessage(string.Format("DEST: user={0} pass={1} instance={2}  DB={3}", dest_user, dest_pass, dest_instance, dest_dbname));
+                DebugMessage(string.Format("SRC: user={0} instance={1}  DB={2}", src_user, src_instance, src_dbname));
+                DebugMessage(string.Format("DEST: user={0} instance={1}  DB={2}", dest_user, dest_instance, dest_dbname));
                 DebugMessage(string.Format("Misc: replace={0} PIPES perms={1} NOP={2}", dest_overwrite.ToString(), setPIPESperms.ToString(), nop.ToString()));
 
                 if (!nop)
