@@ -99,22 +99,29 @@ namespace mssqlDBcopy
                 {
                     if (SqlConnect())
                     {
-                        backuplog = HasTLog(src_con, src_dbname);
-
-                        if (backuplog != -1)
+                        if (SourceDBexists(src_con, src_dbname))
                         {
-                            if (GetDefaultDirs(dest_con))
+                            backuplog = HasTLog(src_con, src_dbname);
+
+                            if (backuplog != -1)
                             {
-                                if (dest_overwrite)
+                                if (GetDefaultDirs(dest_con))
                                 {
-                                    if (DropDestDB(dest_con, dest_dbname)) CopyDatabase(src_con, src_dbname, dest_con, dest_dbname);
-                                }
-                                else
-                                {
-                                    CopyDatabase(src_con, src_dbname, dest_con, dest_dbname);
-                                } // if..else: overwrite destination?
-                            } // if: got default directories on dest instance?
-                        } // if: got transaction log info?
+                                    if (dest_overwrite)
+                                    {
+                                        if (DropDestDB(dest_con, dest_dbname)) CopyDatabase(src_con, src_dbname, dest_con, dest_dbname);
+                                    }
+                                    else
+                                    {
+                                        CopyDatabase(src_con, src_dbname, dest_con, dest_dbname);
+                                    } // if..else: overwrite destination?
+                                } // if: got default directories on dest instance?
+                            } // if: got transaction log info?
+                        }
+                        else
+                        {
+                            Message(string.Format("Database {0} does not exist in instance {1}, or there was an error checking on it. If there were problems, there should be an error message above this message.", src_dbname, src_instance));
+                        } // if..else: does source DB exist?
                     } // if: connected?
                 } // if: to do stuff or not to do stuff
             } // if..else: proper parameter count?
@@ -122,6 +129,37 @@ namespace mssqlDBcopy
             Console.WriteLine("Done!");
             Console.ReadKey();
         } // Main
+
+        /// <summary>Check if the source database exists</summary>
+        /// <param name="con">Connection to the source MSSQL instance</param>
+        /// <param name="dbname">The name of the source database</param>
+        /// <returns>TRUE: database exists, FALSE: database doesn't exist or there was an error</returns>
+        private static bool SourceDBexists(SqlConnection con, string dbname)
+        {
+            bool ret = true;    // Be optimistic!
+
+            DebugMessage(string.Format("SourceDBexists({0},{1})", con.DataSource, dbname));
+
+            try
+            {
+                using (SqlCommand cmd = con.CreateCommand())
+                {
+                    cmd.CommandText = string.Format("select count([name]) from sys.databases where [name] = '{0}'", dbname);
+                    object count = cmd.ExecuteScalar();
+                    if (int.Parse(count.ToString()) == 0) ret = false;
+                } // using: SqlCommand
+
+            } // try
+            catch (Exception ex)
+            {
+                ret = false;
+                Message(string.Format("Error checking if database exists: {0}", ex.ToString()));
+            } // catch
+
+            DebugMessage(string.Format("SourceDBexists = {0}", ret.ToString()));
+
+            return ret;
+        } // SourceDBexists
 
         /// <summary>Debug messages</summary>
         /// <param name="msg"></param>

@@ -62,6 +62,12 @@ Specify how the source instance should refer to the location used for holding th
 ##### /DEST_PATH=holding-path
 Specify how the destination instance should refer to the location used for holding the files while the transfer from source to destination is in progress.  This must be readable by the destination instance. If you use this utility often enough, consider setting the MSSQLDBCOPY_DEST_HOLDINGPATH environment variable instead.  This switch will override the value of the /PATH switch as well as the holding path environment variables.
 
+## Messages
+If you get this error:
+`Error running RESTORE LOG <databasename> FROM  DISK = <location> WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5
+System.Data.SqlClient.SqlException (0x80131904): The log or differential backup cannot be restored because no files are ready to roll forward.
+RESTORE LOG is terminating abnormally.`
+Chances are a database by the same name you specified is already at the destination.  In that case, choose a new name for the destination database or use the `/REPLACE` switch.  *Note - using `/REPLACE` will stomp on whatever's at the destination by that name which means you will lose data!*
 
 ## If you've made it this far...
 Feel free to contact me with questions, problems, etc.  Note, however, that I may not be able to help as much as you would want...  I'm not familiar with all system configurations, and there are some which may not be compatible with this utility.  Also, there are only so many things I can do to help when I don't have access to your computer.  I also have limited time because I've got this, other projects, a job, and other responsibilities.  
