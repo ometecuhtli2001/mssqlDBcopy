@@ -71,8 +71,9 @@ Chances are a database by the same name you specified is already at the destinat
 
 ## Error codes
 This utility returns an error code to the caller:
+
 code|meaning
----|---
+-----|-----
 0|success
 100|problem with parameters
 200|source database does not exist or there was an error checking for it
