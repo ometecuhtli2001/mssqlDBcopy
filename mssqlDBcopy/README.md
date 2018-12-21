@@ -71,12 +71,14 @@ Chances are a database by the same name you specified is already at the destinat
 
 ## Error codes
 This utility returns an error code to the caller:
-0 - success
-100 - problem with parameters
-200 - source database does not exist or there was an error checking for it
-300 - problem with checking on transaction log
-400 - problem dropping destination database
-500 - problem transferring database (specifically, `CopyDatabase()` returned an error)
+code|meaning
+---|---
+0|success
+100|problem with parameters
+200|source database does not exist or there was an error checking for it
+300|problem with checking on transaction log
+400|problem dropping destination database
+500|problem transferring database (specifically, `CopyDatabase()` returned an error)
 
 ## If you've made it this far...
 Feel free to contact me with questions, problems, etc.  Note, however, that I may not be able to help as much as you want...  I'm not familiar with all system configurations, and there are some which may not be compatible with this utility.  Also, there are only so many things I can do to help when I don't have access to your computer.  I also have limited time because I've got this, other projects, a job, and other responsibilities.  As a request, if you need help figuring out how to use this utility or have general questions, please file an issue but be sure to add the "question" label to it.
