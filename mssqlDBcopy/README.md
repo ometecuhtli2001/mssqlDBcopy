@@ -56,22 +56,25 @@ The holding path is the place where the backup files live while in transit from 
 ##### /PATH=holding-path
 Specify the location to hold the files while the transfer from source to destination is in progress.  Both source and destination instance will receive this setting, so they must refer to the holding area in the same way.  You won't be able to use this when transferring between SQL Server on Windows and SQL Server on Linux.  This must be writable by the source instance and readable by the destination instance.  If you're copying on the same instance (or two instances on one host) you can specify a local drive, and it will copy pretty quick.  Note this is why there's an equal sign separating the switch from the value and not a colon like in the other parameters.  If you use this utility often enough, consider setting the MSSQLDBCOPY_HOLDINGPATH environment variable instead.  This switch will override the value of the MSSQLDBCOPY_HOLDINGPATH variable.
 
-##### /SRC_PATH=holding-path
+##### /BACKUP_TO=holding-path
+Formerly known as /SRC_PATH
 Specify how the source instance should refer to the location used for holding the files while the transfer from source to destination is in progress.  This must be writable by the source instance. If you use this utility often enough, consider setting the MSSQLDBCOPY_SRC_HOLDINGPATH environment variable instead.  This switch will override the value of the /PATH switch as well as the holding path environment variables.
 
-##### /DEST_PATH=holding-path
-Specify how the destination instance should refer to the location used for holding the files while the transfer from source to destination is in progress.  This must be readable by the destination instance. If you use this utility often enough, consider setting the MSSQLDBCOPY_DEST_HOLDINGPATH environment variable instead.  This switch will override the value of the /PATH switch as well as the holding path environment variables.
+##### /RESTORE_FROM=holding-path
+Formerly known as /DEST_PATH
+Specify how the destination instance should refer to the location used for holding the files to be used in the restore process.  This must be readable by the destination instance. If you use this utility often enough, consider setting the MSSQLDBCOPY_DEST_HOLDINGPATH environment variable instead.  This switch will override the value of the /PATH switch as well as the holding path environment variables.
 
-#### /SAVE_TO=path, /COPY_FROM=path, /COPY_TO=path, /READ_FROM=path
-If you don't have access to an intermediate holding location for use with the /PATH, /SRC_PATH, and/or /DEST_PATH options, you can use these to copy directly from the source SQL Server host to the destination SQL Server host.  If you want to do this, *all four of these options must be specified*.
-* /SAVE_TO=path - save the backup file here.  This is a local reference from the source SQL Server instance's perspective
-* /COPY_FROM=path - mssqlDBcopy will use this path to copy the backup files from the source host.  Most likely this would be a UNC path reference; no need to specify filenames
-* /COPY_TO=path - mssqlDBcopy will use this path to copy the backup files to the destination host.  Most likely this would be a UNC path reference; do not specify filenames
-* /READ_FROM=path - read the backup files for the restore operation. This is a local reference from the destination SQL Server instance's perspective
+#### /COPY_SRC=path, /COPY_DEST=path
+If you don't have access to an intermediate holding location for use with the /PATH, /BACKUP_TO, and/or /DEST_PATH options, you can use these to copy directly from the source SQL Server host to the destination SQL Server host.  If you want to do this, *all four of these options must be specified*.
+* /COPY_SRC=path - mssqlDBcopy will use this path to copy the backup files from the source host.  This points to the same place referred to by /BACKUP_TO and will most likely be a UNC path (but it doesn't have to be); do not specify filenames
+* /COPY_DEST=path - mssqlDBcopy will use this path to copy the backup files to the destination host.  This points to the same place referred to by /RESTORE_FROM and will most likely be a UNC path (but it doesn't have to be); do not specify filenames
 
 Example
-`mssqlDBcopy dbbox01:aqc devbox:AQC /SAVE_TO=c:\temp, /COPY_FROM=\\dbbox01\c$\temp, /COPY_TO=\\devbox\d$\xfer, /READ_FROM=d:\xfer`
-Transfer the AQC database from DBBOX01 to DEVBOX, using UNC paths to go directly from one server to the other.
+`mssqlDBcopy dbbox01:aqc devbox:AQC /BACKUP_TO=c:\temp, /COPY_FROM=\\dbbox01\c$\temp, /COPY_TO=\\devbox\d$\xfer, /RESTORE_FROM=d:\xfer`
+Transfer the AQC database from DBBOX01 to DEVBOX, using UNC paths to go directly from one server to the other without using an intermediate host to hold the backup files.
+
+`mssqlDBcopy dbbox01:aqc sql2017linux:AQCPROD /BACKUP_TO=c:\temp, /COPY_FROM=\\dbbox01\c$\temp, /COPY_TO=\\sql2017linux\sqlshare, /RESTORE_FROM=/var/shares/sqlshare /DEST_CREDS:sqldba:ComplexPassw0rd`
+Transfer the AQC database from DBBOX01 to SQL2017LINUX.  For this to work, SQL2017LINUX has Samba configured to provide a share named *sqlshare* so Windows boxes can transfer files directly to the Linux host.  This invokation uses user context to access the source SQL instance, and a username and passwords to access the destination SQL instance.
 
 ## Messages
 If you get this error:

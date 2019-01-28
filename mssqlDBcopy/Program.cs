@@ -54,9 +54,9 @@ namespace mssqlDBcopy
             if (args.Length < 2)
             {
                 Console.WriteLine("Please specify a source instance and database followed by a target instance and database. Options come after that.");
-                Console.WriteLine("\tmssqldbcopy source-instance:database target-instance:database [/REPLACE|/PIPESPERMS][/SRC_CREDS:user:pass][/DEST_CREDS:user:pass][[/PATH=holding-path]|[/SRC_PATH=source-holding-path /DEST_PATH=destination-holding-path]]");
+                Console.WriteLine("\tmssqldbcopy source-instance:database target-instance:database [/REPLACE|/PIPESPERMS][/SRC_CREDS:user:pass][/DEST_CREDS:user:pass][[/PATH=holding-path]|[/BACKUP_TO=source-holding-path /RESTORE_FROM=destination-holding-path]]");
                 Console.WriteLine();
-                Console.WriteLine("Note if you specify /PATH applied to both source and destination, so you cannot specify /SRC_PATH or /DEST_PATH with /PATH.  Likewise, /SRC_PATH and /DEST_PATH go together - you must specify both, and then you cannot use /PATH.");
+                Console.WriteLine("Note if you specify /PATH applied to both source and destination, so you cannot specify /BACKUP_TO or /RESTORE_FROM with /PATH.  Likewise, /BACKUP_TO and /RESTORE_FROM go together - you must specify both, and then you cannot use /PATH.");
                 Console.WriteLine();
             }
             else
@@ -82,7 +82,8 @@ namespace mssqlDBcopy
 
 
                 /* Go through settings and check for sanity */
-                if (!DoArgumentsMakeSense())
+                ret = DoArgumentsMakeSense();
+                if (ret != 0)
                 {
 
                 }
@@ -91,32 +92,6 @@ namespace mssqlDBcopy
 
                 } // if..else: passed argument sanity check?
 
-                // Check holding path settings - SRC_PATH and DEST_PATH will override PATH and environment variables
-                if ((holdingpath == "") && ((src_holdingpath =="") || (dest_holdingpath =="")))
-                {
-                    ret = 100;
-                    Message("ERROR: Please use either /PATH or both /SRC_PATH and /DEST_PATH to specify a holding path for the files to stay during the transfer.");
-                    nop = true;
-                } // if: is there a holding path?
-
-                // No source and destination holding paths specified, so use PATH for both
-                if ((holdingpath != "") && (src_holdingpath == "") && (dest_holdingpath == ""))
-                {
-                    if (holdingpath.EndsWith(@"\")) holdingpath = holdingpath.Trim('\\');   // Remove trailing back slash from holding path
-                    src_holdingpath = holdingpath;
-                    dest_holdingpath = holdingpath;
-                } // if: is holdingpath empty?
-
-                // Ensure [src|dst]_path and [save|copy|read] are not both being specified
-                if(
-                    ((holdingpath !="") || (src_holdingpath !="") || (dest_holdingpath !=""))
-                    &&
-                    (copy_from !="")
-                    )
-                {
-                    Message("ERROR: Please use either some combination of /PATH, /SRC_PATH, and /DEST_PATH or the SAVE_TO/COPY_FROM/COPY_TO/READ_FROM options, but not both.");
-                    nop = true;
-                } // if: conflicting source/dest/holding paths?
                 DebugMessage(string.Format("SRC: user={0} instance={1}  DB={2}", src_user, src_instance, src_dbname));
                 DebugMessage(string.Format("DEST: user={0} instance={1}  DB={2}", dest_user, dest_instance, dest_dbname));
                 DebugMessage(string.Format("Misc: replace={0} PIPES perms={1} NOP={2}", dest_overwrite.ToString(), setPIPESperms.ToString(), nop.ToString()));
@@ -173,9 +148,36 @@ namespace mssqlDBcopy
 
         /// <summary>Do the arguments supplied to the utility make sense?</summary>
         /// <returns>TRUE=yes, FALSE=no</returns>
-        private static bool DoArgumentsMakeSense()
+        private static int DoArgumentsMakeSense()
         {
-            bool ret = true;    // Be optimistic!
+            int ret = 0;    // Be optimistic!
+
+            // Check holding path settings - BACKUP_TO and RESTORE_FROM will override PATH and environment variables
+            if ((holdingpath == "") && ((src_holdingpath == "") || (dest_holdingpath == "")))
+            {
+                ret = 100;
+                Message("ERROR: Please use either /PATH or both /BACKUP_TO and /RESTORE_FROM to specify a holding path for the files to stay during the transfer.");
+                nop = true;
+            } // if: is there a holding path?
+
+            // No source and destination holding paths specified, so use PATH for both
+            if ((holdingpath != "") && (src_holdingpath == "") && (dest_holdingpath == ""))
+            {
+                if (holdingpath.EndsWith(@"\")) holdingpath = holdingpath.Trim('\\');   // Remove trailing back slash from holding path
+                src_holdingpath = holdingpath;
+                dest_holdingpath = holdingpath;
+            } // if: is holdingpath empty?
+
+            // Ensure [src|dst]_path and [save|copy|read] are not both being specified
+            if (
+                ((holdingpath != "") || (src_holdingpath != "") || (dest_holdingpath != ""))
+                &&
+                (copy_from != "")
+                )
+            {
+                Message("ERROR: Please use either some combination of /PATH, /BACKUP_TO, and /RESTORE_FROM or the SAVE_TO/COPY_FROM/COPY_TO/READ_FROM options, but not both.");
+                nop = true;
+            } // if: conflicting source/dest/holding paths?
 
             return ret;
         } // DoArgumentsMakeSense
@@ -271,7 +273,7 @@ namespace mssqlDBcopy
                         break;
                 } // switch: sw
 
-                foreach(string arg in new string[] {"/PATH","/SRC_PATH","/DEST_PATH", "/SAVE_TO", "/COPY_FROM", "/COPY_TO", "/READ_FROM", })
+                foreach(string arg in new string[] {"/PATH","/BACKUP_TO","/RESTORE_FROM", "/SAVE_TO", "/COPY_FROM", "/COPY_TO", "/READ_FROM", })
                 {
                     if (sw.ToUpper().StartsWith(arg))
                     {
@@ -279,10 +281,10 @@ namespace mssqlDBcopy
                         {
                             case "/PATH": holdingpath = sw.Split('=')[1];
                                 break;
-                            case "/SRC_PATH":
+                            case "/BACKUP_TO":
                                 src_holdingpath = sw.Split('=')[1];
                                 break;
-                            case "/DEST_PATH":
+                            case "/RESTORE_FROM":
                                 dest_holdingpath = sw.Split('=')[1];
                                 break;
                             case "/SAVE_TO = path":
