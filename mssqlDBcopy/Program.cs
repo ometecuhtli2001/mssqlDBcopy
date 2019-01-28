@@ -36,6 +36,10 @@ namespace mssqlDBcopy
         private static string holdingpath = "";     // Where to put the backup files during transfer from source -> destination
         private static string src_holdingpath = "";     // How to reference holding area in source instance
         private static string dest_holdingpath = "";    // How to reference holding area in destination instance
+        private static string save_to = "";             // Location of files for BACKUP
+        private static string copy_from = "";           // Source path for file copy
+        private static string copy_to = "";             // Destination path for file copy
+        private static string read_from = "";           // Location of files for RESTORE
 
 
         private static bool setPIPESperms = false;
@@ -77,7 +81,15 @@ namespace mssqlDBcopy
                 ParseCommandLine(args);
 
 
-                /* Go through settings (not that they should be set) and check for sanity */
+                /* Go through settings and check for sanity */
+                if (!DoArgumentsMakeSense())
+                {
+
+                }
+                else
+                {
+
+                } // if..else: passed argument sanity check?
 
                 // Check holding path settings - SRC_PATH and DEST_PATH will override PATH and environment variables
                 if ((holdingpath == "") && ((src_holdingpath =="") || (dest_holdingpath =="")))
@@ -95,6 +107,16 @@ namespace mssqlDBcopy
                     dest_holdingpath = holdingpath;
                 } // if: is holdingpath empty?
 
+                // Ensure [src|dst]_path and [save|copy|read] are not both being specified
+                if(
+                    ((holdingpath !="") || (src_holdingpath !="") || (dest_holdingpath !=""))
+                    &&
+                    (copy_from !="")
+                    )
+                {
+                    Message("ERROR: Please use either some combination of /PATH, /SRC_PATH, and /DEST_PATH or the SAVE_TO/COPY_FROM/COPY_TO/READ_FROM options, but not both.");
+                    nop = true;
+                } // if: conflicting source/dest/holding paths?
                 DebugMessage(string.Format("SRC: user={0} instance={1}  DB={2}", src_user, src_instance, src_dbname));
                 DebugMessage(string.Format("DEST: user={0} instance={1}  DB={2}", dest_user, dest_instance, dest_dbname));
                 DebugMessage(string.Format("Misc: replace={0} PIPES perms={1} NOP={2}", dest_overwrite.ToString(), setPIPESperms.ToString(), nop.ToString()));
@@ -148,6 +170,16 @@ namespace mssqlDBcopy
 
             return ret; // Return an errorcode to the caller
         } // Main
+
+        /// <summary>Do the arguments supplied to the utility make sense?</summary>
+        /// <returns>TRUE=yes, FALSE=no</returns>
+        private static bool DoArgumentsMakeSense()
+        {
+            bool ret = true;    // Be optimistic!
+
+            return ret;
+        } // DoArgumentsMakeSense
+
 
         /// <summary>Check if the source database exists</summary>
         /// <param name="con">Connection to the source MSSQL instance</param>
@@ -239,7 +271,7 @@ namespace mssqlDBcopy
                         break;
                 } // switch: sw
 
-                foreach(string arg in new string[] {"/PATH","/SRC_PATH","/DEST_PATH" })
+                foreach(string arg in new string[] {"/PATH","/SRC_PATH","/DEST_PATH", "/SAVE_TO", "/COPY_FROM", "/COPY_TO", "/READ_FROM", })
                 {
                     if (sw.ToUpper().StartsWith(arg))
                     {
@@ -252,6 +284,18 @@ namespace mssqlDBcopy
                                 break;
                             case "/DEST_PATH":
                                 dest_holdingpath = sw.Split('=')[1];
+                                break;
+                            case "/SAVE_TO = path":
+                                save_to = sw.Split('=')[1];
+                                break;
+                            case "/COPY_FROM = path":
+                                copy_from = sw.Split('=')[1];
+                                break;
+                            case "/ COPY_TO = path":
+                                copy_to = sw.Split('=')[1];
+                                break;
+                            case "/ READ_FROM = path":
+                                read_from = sw.Split('=')[1];
                                 break;
                         } // switch: which path
                     } // if: holding path specified?

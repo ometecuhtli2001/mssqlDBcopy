@@ -62,6 +62,17 @@ Specify how the source instance should refer to the location used for holding th
 ##### /DEST_PATH=holding-path
 Specify how the destination instance should refer to the location used for holding the files while the transfer from source to destination is in progress.  This must be readable by the destination instance. If you use this utility often enough, consider setting the MSSQLDBCOPY_DEST_HOLDINGPATH environment variable instead.  This switch will override the value of the /PATH switch as well as the holding path environment variables.
 
+#### /SAVE_TO=path, /COPY_FROM=path, /COPY_TO=path, /READ_FROM=path
+If you don't have access to an intermediate holding location for use with the /PATH, /SRC_PATH, and/or /DEST_PATH options, you can use these to copy directly from the source SQL Server host to the destination SQL Server host.  If you want to do this, *all four of these options must be specified*.
+* /SAVE_TO=path - save the backup file here.  This is a local reference from the source SQL Server instance's perspective
+* /COPY_FROM=path - mssqlDBcopy will use this path to copy the backup files from the source host.  Most likely this would be a UNC path reference; no need to specify filenames
+* /COPY_TO=path - mssqlDBcopy will use this path to copy the backup files to the destination host.  Most likely this would be a UNC path reference; do not specify filenames
+* /READ_FROM=path - read the backup files for the restore operation. This is a local reference from the destination SQL Server instance's perspective
+
+Example
+`mssqlDBcopy dbbox01:aqc devbox:AQC /SAVE_TO=c:\temp, /COPY_FROM=\\dbbox01\c$\temp, /COPY_TO=\\devbox\d$\xfer, /READ_FROM=d:\xfer`
+Transfer the AQC database from DBBOX01 to DEVBOX, using UNC paths to go directly from one server to the other.
+
 ## Messages
 If you get this error:
 `Error running RESTORE LOG <databasename> FROM  DISK = <location> WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5
