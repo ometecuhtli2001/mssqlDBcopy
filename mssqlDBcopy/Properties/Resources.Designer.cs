@@ -61,6 +61,31 @@ namespace mssqlDBcopy.Properties {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to USE [msdb];
+        ///
+        ///DECLARE @jobId BINARY(16);
+        ///EXEC  msdb.dbo.sp_add_job @job_name=N&apos;!JOBNAME!&apos;, 
+        ///		@enabled=1, 
+        ///		@notify_level_eventlog=0, 
+        ///		@notify_level_email=2, 
+        ///		@notify_level_page=2, 
+        ///		@delete_level=3,
+        ///		@description=N&apos;Cleanup from MSSQLDBcopy&apos;, 
+        ///		@category_name=N&apos;[Uncategorized (Local)]&apos;, 
+        ///		@job_id = @jobId OUTPUT;
+        ///
+        ///EXEC msdb.dbo.sp_add_jobserver @job_name=N&apos;!JOBNAME!&apos;, @server_name = N&apos;!INSTANCE!&apos;;
+        ///
+        ///USE [msdb];
+        ///EXEC msdb.dbo.sp_add_jobstep @job_name=N&apos;!JOBNAME!&apos;, @step_name=N&apos;cleanup&apos; [rest of string was truncated]&quot;;.
+        /// </summary>
+        internal static string cleanup_job {
+            get {
+                return ResourceManager.GetString("cleanup_job", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to alter user [epims_admin] with login=[epims_admin]
         ///alter user [pipes_user] with login=[pipes_user]
         ///alter user [pipes_reports] with login=[pipes_reports]

@@ -117,6 +117,47 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="cleanup_job" xml:space="preserve">
+    <value>USE [msdb];
+
+DECLARE @jobId BINARY(16);
+EXEC  msdb.dbo.sp_add_job @job_name=N'!JOBNAME!', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=2, 
+		@notify_level_page=2, 
+		@delete_level=3,
+		@description=N'Cleanup from MSSQLDBcopy', 
+		@category_name=N'[Uncategorized (Local)]', 
+		@job_id = @jobId OUTPUT;
+
+EXEC msdb.dbo.sp_add_jobserver @job_name=N'!JOBNAME!', @server_name = N'!INSTANCE!';
+
+USE [msdb];
+EXEC msdb.dbo.sp_add_jobstep @job_name=N'!JOBNAME!', @step_name=N'cleanup', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_fail_action=2, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'CmdExec', 
+		@command=N'del !FILESPEC!', 
+		@database_name=N'master', 
+		@flags=0;
+
+EXEC msdb.dbo.sp_update_job @job_name=N'!JOBNAME!', 
+		@enabled=1, 
+		@start_step_id=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=2, 
+		@notify_level_page=2, 
+		@delete_level=0, 
+		@description=N'Cleanup from MSSQLDBcopy', 
+		@category_name=N'[Uncategorized (Local)]', 
+		@notify_email_operator_name=N'', 
+		@notify_page_operator_name=N'';</value>
+  </data>
   <data name="PIPESperms" xml:space="preserve">
     <value>alter user [epims_admin] with login=[epims_admin]
 alter user [pipes_user] with login=[pipes_user]

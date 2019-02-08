@@ -17,6 +17,7 @@ Tested a couple times on Linux.  I'm using Ubuntu 16.04, running mono 4.6.2.7.  
 ## Notes
 This was written using Visual Studio 2017.
 If running from a debugger, the utility will say `Done!` when it's done, then wait for a keypress.  I did this so I could actually see the output while running from Visual Studio.
+Messages are output to STDOUT and to a text file named mssqldbcopy.log This text file is created in the current directory.
 
 ## Arguments
 On the command line, you specify a source instance and database followed by a target instance and database, with options after that.  Source and destination instance and database are each separated by a colon, so you have source-instance:source-database target-instance:target-database
@@ -25,21 +26,24 @@ At its simplest, you'd invoke the copier like this: `mssqlDBcopy server1:lotsada
 
 Note while the database names are not case-sensitive, case is preserved (appearance-wise) for the destination name.
 
-If you're copying a database from a Windows-based SQL Server instance to a Linux-based SQL Server instance, there are some considerations to take into account.  The following switches were built into this utility with those considerations.  Specifically:
+If you're copying a database from a Windows-based SQL Server instance to a Linux-based SQL Server instance, there are some considerations to take into account.  The following switches were built into this utility with those considerations in mind.  Specifically:
 * Linux refers to file system locations differently than Windows
 * SQL Server for Linux only supports SQL authentication
 
 As an example of copying a database from a Windows-based SQL Server instance to a Linux-based SQL Server instance, consider:
-`mssqlDBcopy dbbox01:aqc lbox:AQC /src_path=\\interchange\e$  /dest_path=/media/interchange /debug /dest_creds:sa:Password!`
+`mssqlDBcopy dbbox01:aqc lbox:AQC /SAVE_TO=\\interchange\e$  /READ_FROM=/media/interchange /DEBUG /DEST_CREDS:sa:Password!`
 
 This takes into account the different ways Windows and Linux refer to the same share on the network (note /media/interchange would already have to be mounted to \\interchange\e$ before running this!) as well as the fact that the Windows-based SQL instance can use Windows authentication and the Linux-based instance cannot.  Read on for further details about the individual command line switches.
 
 ### Additional switches
 #### /REPLACE
-Specify this if the destination already contains a database by the same name.  This will attempt to knock anyone using it off, then drop the database before restoring the copy from the source instance.
+Specify this if the destination already contains a database by the same name.  This will attempt to knock anyone using it off, then drop the database before restoring the copy from the source instance. If there are long-running transactions, this will eventually time out and the entire operation will fail.
 
 #### /PIPESPERMS
-This was made to simplify applying permissions to the database and is included here to show how additional permission sets for other databases would be added.  Admitedly, I took the easy way out in implementing this because I figured this would be the only set of permissions I'd have to implement.
+This was made to simplify applying permissions to the database and is included here to show how additional permission sets for other databases would be added.  Admitedly, I took the easy way out in implementing this because I figured this would be the only set of permissions I'd have to implement.  All it does is throw a bunch of T-SQL at the database, so if you have any post-installation tasks to do at the destination you can automate them here.
+
+#### /CLEANUP
+Use this option to delete the BAK files created by the transfer process.  By default, they are not deleted.
 
 #### Instance credentials
 If you don't specify credentials, the program will use your current credentials and pass them on to the source and destination.  Note you do not have to specify credentials for BOTH - you can do one, the other, both, or neither.
@@ -51,29 +55,39 @@ Specify a username and password for SQL authentication on the source instance.  
 Specify a username and password for SQL authentication on the destination instance.  BE CAREFUL ABOUT USING CREDENTIALS ON A COMMAND LINE! If you don't specify this, your current context will be passed to the destination instance.  Note if the destination instance is Linux-based, you must specify this or you'll get an authentication error.
 
 #### Holding path
-The holding path is the place where the backup files live while in transit from source to destination instance.  It can be local storage (like c:\temp), an UNC path, or a Linux path (like /some/directory). Note, however, that both the source and destination must be able to access this location (even if they refer to it in different ways) - *this utility does not actually do any file copying.*
+The holding path is the place where the backup files live while in transit from the source to the destination instance.  It can be local storage (like c:\temp), an UNC path, or a Linux path (like /some/directory). Note, however, that both the source and destination must be able to access this location (even if they refer to it in different ways) - *using these arguments does not actually do any file copying.*
 
-##### /PATH=holding-path
-Specify the location to hold the files while the transfer from source to destination is in progress.  Both source and destination instance will receive this setting, so they must refer to the holding area in the same way.  You won't be able to use this when transferring between SQL Server on Windows and SQL Server on Linux.  This must be writable by the source instance and readable by the destination instance.  If you're copying on the same instance (or two instances on one host) you can specify a local drive, and it will copy pretty quick.  Note this is why there's an equal sign separating the switch from the value and not a colon like in the other parameters.  If you use this utility often enough, consider setting the MSSQLDBCOPY_HOLDINGPATH environment variable instead.  This switch will override the value of the MSSQLDBCOPY_HOLDINGPATH variable.
+If you specify /PATH, you cannot specify /SAVE_TO and /READ_FROM.  If you specify /SAVE_TO and /READ_FROM, you cannoth specify /PATH.  Also, /SAVE_TO and /READ_FROM are a package deal - if you specify one, you must specify the other.
 
-##### /BACKUP_TO=holding-path
+Because this does not do any copying, /SAVE_TO and /READ_FROM must both ultimately point to the same location.  Usually, this would be something like a share on a storage system both SQL Server instances could access, or you could set up a share on one of the hosts that the other can access.
+
+##### /PATH=holding-path (formerly known as HOLDINGPATH)
+Specify the location to hold the files while the transfer from source to destination is in progress.  Both source and destination instance will receive this setting, so they must refer to the holding area in the same way.  You won't be able to use this when transferring between SQL Server on Windows and SQL Server on Linux.  This must be writable by the source instance and readable by the destination instance.  If you're copying on the same instance (or two instances on one host) you can specify a local drive, and it will copy pretty quick.  Note this is why there's an equal sign separating the switch from the value and not a colon like in the other parameters.
+
+[//]: # (If you use this utility often enough, consider setting the MSSQLDBCOPY_PATH environment variable instead.  This switch will override the value of the MSSQLDBCOPY_PATH variable.)
+
+##### /SAVE_TO=holding-path
 Formerly known as /SRC_PATH
-Specify how the source instance should refer to the location used for holding the files while the transfer from source to destination is in progress.  This must be writable by the source instance. If you use this utility often enough, consider setting the MSSQLDBCOPY_SRC_HOLDINGPATH environment variable instead.  This switch will override the value of the /PATH switch as well as the holding path environment variables.
+Specify how the source instance should refer to the location used for holding the files while the transfer from source to destination is in progress.  This must be writable by the source instance.
 
-##### /RESTORE_FROM=holding-path
+[//]: # (If you use this utility often enough, consider setting the MSSQLDBCOPY_FROM_HOLDINGPATH environment variable instead.  This switch will override the value of the /PATH switch as well as the holding path environment variables.)
+
+##### /READ_FROM=holding-path
 Formerly known as /DEST_PATH
-Specify how the destination instance should refer to the location used for holding the files to be used in the restore process.  This must be readable by the destination instance. If you use this utility often enough, consider setting the MSSQLDBCOPY_DEST_HOLDINGPATH environment variable instead.  This switch will override the value of the /PATH switch as well as the holding path environment variables.
+Specify how the destination instance should refer to the location used for holding the files to be used in the restore process.  This must be readable by the destination instance. 
 
-#### /COPY_SRC=path, /COPY_DEST=path
-If you don't have access to an intermediate holding location for use with the /PATH, /BACKUP_TO, and/or /DEST_PATH options, you can use these to copy directly from the source SQL Server host to the destination SQL Server host.  If you want to do this, *all four of these options must be specified*.
-* /COPY_SRC=path - mssqlDBcopy will use this path to copy the backup files from the source host.  This points to the same place referred to by /BACKUP_TO and will most likely be a UNC path (but it doesn't have to be); do not specify filenames
-* /COPY_DEST=path - mssqlDBcopy will use this path to copy the backup files to the destination host.  This points to the same place referred to by /RESTORE_FROM and will most likely be a UNC path (but it doesn't have to be); do not specify filenames
+[//]: # (If you use this utility often enough, consider setting the MSSQLDBCOPY_DEST_HOLDINGPATH environment variable instead.  This switch will override the value of the /PATH switch as well as the holding path environment variables.)
+
+#### /COPY_FROM=path, /COPY_DEST=path
+If you don't have access to an intermediate holding location for use with the /PATH, /SAVE_TO, and/or /READ_FROM options, you can use these to copy directly from the source SQL Server host to the destination SQL Server host.
+* /COPY_FROM=path - mssqlDBcopy will use this path to copy the backup files from the source host.  This points to the same place referred to by /SAVE_TO and will most likely be a UNC path (but it doesn't have to be); do not specify filenames or a trailing slash
+* /COPY_DEST=path - mssqlDBcopy will use this path to copy the backup files to the destination host.  This points to the same place referred to by /READ_FROM and will most likely be a UNC path (but it doesn't have to be); do not specify filenames or a trailing slash
 
 Example
-`mssqlDBcopy dbbox01:aqc devbox:AQC /BACKUP_TO=c:\temp, /COPY_FROM=\\dbbox01\c$\temp, /COPY_TO=\\devbox\d$\xfer, /RESTORE_FROM=d:\xfer`
+`mssqlDBcopy dbbox01:aqc devbox:AQC /SAVE_TO=c:\temp, /COPY_FROM=\\dbbox01\c$\temp, /COPY_DEST=\\devbox\d$\xfer, /READ_FROM=d:\xfer`
 Transfer the AQC database from DBBOX01 to DEVBOX, using UNC paths to go directly from one server to the other without using an intermediate host to hold the backup files.
 
-`mssqlDBcopy dbbox01:aqc sql2017linux:AQCPROD /BACKUP_TO=c:\temp, /COPY_FROM=\\dbbox01\c$\temp, /COPY_TO=\\sql2017linux\sqlshare, /RESTORE_FROM=/var/shares/sqlshare /DEST_CREDS:sqldba:ComplexPassw0rd`
+`mssqlDBcopy dbbox01:aqc sql2017linux:AQCPROD /SAVE_TO=c:\temp, /COPY_FROM=\\dbbox01\c$\temp, /COPY_TO=\\sql2017linux\sqlshare, /READ_FROM=/var/shares/sqlshare /DEST_CREDS:sqldba:ComplexPassw0rd`
 Transfer the AQC database from DBBOX01 to SQL2017LINUX.  For this to work, SQL2017LINUX has Samba configured to provide a share named *sqlshare* so Windows boxes can transfer files directly to the Linux host.  This invokation uses user context to access the source SQL instance, and a username and passwords to access the destination SQL instance.
 
 ## Messages
@@ -91,9 +105,28 @@ code|meaning
 0|success
 100|problem with parameters
 200|source database does not exist or there was an error checking for it
-300|problem with checking on transaction log
+300|problem with checking if source database has a transaction log
 400|problem dropping destination database
-500|problem transferring database (specifically, `CopyDatabase()` returned an error)
+500|problem transferring database 
 
 ## If you've made it this far...
 Feel free to contact me with questions, problems, etc.  Note, however, that I may not be able to help as much as you want...  I'm not familiar with all system configurations, and there are some which may not be compatible with this utility.  Also, there are only so many things I can do to help when I don't have access to your computer.  I also have limited time because I've got this, other projects, a job, and other responsibilities.  As a request, if you need help figuring out how to use this utility or have general questions, please file an issue but be sure to add the "question" label to it.
+
+## Examples
+
+This command line was used to refresh a dev copy of a database from production.  The tricky part is the development box was locked down by some security software, so accessing the administrative share (\\devsql\c$) is not possible.
+`mssqldbcopy prodsql:pipes devsql:PIPES_TEST /debug /save_to=c:\temp /copy_from=\\prodsql\c$\temp /copy_to=\\storage\User\dba /read_from=\\storage\User\dba /pipesperms /cleanup /replace`
+
+There are four network nodes involved:
+* PRODSQL - the production SQL Server instance, which contains the database I want to copy
+* DEVSQL - the development SQL Server instance, which contains a developer copy which needs to be updated
+* STORAGE - our SAN, available to domain users
+* The computer I'm running the MSSQLDBCOPY command from (a Windows 10 Professional box on the same domain as the two SQL Server instances and the SAN)
+This is what the command does, step by step:
+1. take a backup of the PIPES database on PRODSQL and put it in c:\temp on PRODSQL
+1. copy the resulting BAK file from PRODSQL to a folder on the SAN
+1. the PIPES_TEST database on DEVSQL is set to single-user mode and dropped
+1. DEVSQLA restores the backup file from the SAN
+1. a pre-configured set of permissions is applied to the newly-updated database
+1. finally the BAK files (the one on PRODSQL in c:\temp and the one in \\storage\User\dba) are all deleted
+

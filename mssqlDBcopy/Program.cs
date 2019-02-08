@@ -10,6 +10,8 @@ namespace mssqlDBcopy
 {
     class Program
     {
+        private static string logfile = "mssqldbcopy.log"; // Log file for output (regular and debug)
+
         // Source and destination information
         private static string src_instance;
         private static string src_dbname;
@@ -33,108 +35,103 @@ namespace mssqlDBcopy
          * in different ways.  Note that if an instance is on Linux, and the holding area is not local to that box, it must
          * already be mounted before running this utility.
          */
-        private static string holdingpath = "";     // Where to put the backup files during transfer from source -> destination
-        private static string src_holdingpath = "";     // How to reference holding area in source instance
-        private static string dest_holdingpath = "";    // How to reference holding area in destination instance
-        private static string save_to = "";             // Location of files for BACKUP
+//        private static string holdingpath = "";     // Where to put the backup files during transfer from source -> destination
+//        private static string save_to = "";     // How to reference holding area in source instance
+//        private static string read_from = "";    // How to reference holding area in destination instance
+        private static string save_to = "";             // Location of files for BACKUP - the source SQL instance writes them to this path
         private static string copy_from = "";           // Source path for file copy
         private static string copy_to = "";             // Destination path for file copy
-        private static string read_from = "";           // Location of files for RESTORE
+        private static string read_from = "";           // Location of files for RESTORE - the destination SQL instance reads them from this path
 
 
         private static bool setPIPESperms = false;
-        private static bool dest_overwrite = false;    // Safety first!
-        private static bool debug = false;             // Debug mode (defaults to off)
+        private static bool dest_overwrite = false;     // Safety first!
+        private static bool debug = false;              // Debug mode (defaults to off)
+        private static bool cleanup = false;            // Clean up backup files (defaults to no)
 
         private static bool nop = false;    // If true, do nothing - just parse command line args and exit
         static int Main(string[] args)
         {
             int ret = 0;    // Be optimistic
+            bool proceed;   // Okay to proceed to next section
 
             if (args.Length < 2)
             {
                 Console.WriteLine("Please specify a source instance and database followed by a target instance and database. Options come after that.");
-                Console.WriteLine("\tmssqldbcopy source-instance:database target-instance:database [/REPLACE|/PIPESPERMS][/SRC_CREDS:user:pass][/DEST_CREDS:user:pass][[/PATH=holding-path]|[/BACKUP_TO=source-holding-path /RESTORE_FROM=destination-holding-path]]");
+                Console.WriteLine("\tmssqldbcopy source-instance:database target-instance:database [/REPLACE|/PIPESPERMS|/CLEANUP][/SRC_CREDS:user:pass][/DEST_CREDS:user:pass][[/PATH=holding-path]|[/BACKUP_TO=source-holding-path /RESTORE_FROM=destination-holding-path]]");
                 Console.WriteLine();
                 Console.WriteLine("Note if you specify /PATH applied to both source and destination, so you cannot specify /BACKUP_TO or /RESTORE_FROM with /PATH.  Likewise, /BACKUP_TO and /RESTORE_FROM go together - you must specify both, and then you cannot use /PATH.");
                 Console.WriteLine();
             }
             else
             {
-                string act = "";
-                // Get settings from environment variables
-                try
-                {
-                    act = "MSSQLDBCOPY_HOLDINGPATH";
-                    if (Environment.GetEnvironmentVariable("MSSQLDBCOPY_HOLDINGPATH") != null) holdingpath = Environment.GetEnvironmentVariable("MSSQLDBCOPY_HOLDINGPATH");
-                    act = "MSSQLDBCOPY_SRC_HOLDINGPATH";
-                    if (Environment.GetEnvironmentVariable("MSSQLDBCOPY_SRC_HOLDINGPATH") != null) src_holdingpath = Environment.GetEnvironmentVariable("MSSQLDBCOPY_SRC_HOLDINGPATH");
-                    act = "MSSQLDBCOPY_DEST_HOLDINGPATH";
-                    if (Environment.GetEnvironmentVariable("MSSQLDBCOPY_DEST_HOLDINGPATH") != null) dest_holdingpath = Environment.GetEnvironmentVariable("MSSQLDBCOPY_DEST_HOLDINGPATH");
-                }
-                catch (Exception ex)
-                {
-                    Message(string.Format("WARNING: There was a problem checking on or retrieving the {0} environment variable: {1}",act, ex.ToString()));
-                }
+                // Check for debug mode and turn it on - do this as early as possible so command line parsing debug messages show up if needed
+                foreach(string s in args)
+                    if (s.ToUpper() == "/DEBUG") debug = true;
 
-                // Now parse command line arguments, which can override environment variables
-                ParseCommandLine(args);
+                //proceed = GetEnvVars(); // Get settings from environment variables
 
+                //if(proceed)
+                proceed =ParseCommandLine(args); // Now parse command line arguments, which can override environment variables
 
-                /* Go through settings and check for sanity */
-                ret = DoArgumentsMakeSense();
-                if (ret != 0)
-                {
-
-                }
-                else
-                {
-
-                } // if..else: passed argument sanity check?
-
+                // At this point, output all settings
                 DebugMessage(string.Format("SRC: user={0} instance={1}  DB={2}", src_user, src_instance, src_dbname));
                 DebugMessage(string.Format("DEST: user={0} instance={1}  DB={2}", dest_user, dest_instance, dest_dbname));
                 DebugMessage(string.Format("Misc: replace={0} PIPES perms={1} NOP={2}", dest_overwrite.ToString(), setPIPESperms.ToString(), nop.ToString()));
+                DebugMessage(string.Format("SAVE_TO={0} COPY_FROM={1}", save_to, copy_from));
+                DebugMessage(string.Format("COPY_TO={0} READ_FROM={1}", copy_to, read_from));
 
-                if (!nop)
+                //proceed = false;
+                //ret = -1;
+
+                /* Go through settings and check for sanity */
+                if (proceed) ret = DoArgumentsMakeSense();
+                if (ret != 0)
+                {
+                    // Eventually, some handling code may go here...
+                }
+                else
                 {
                     if (SqlConnect())
                     {
-                        if (SourceDBexists(src_con, src_dbname))
+                        if (SourceDBexists(src_con, src_dbname))    // Does the source DB exist in the source instance?
                         {
-                            backuplog = HasTLog(src_con, src_dbname);
-
-                            if (backuplog != -1)
+                            if (GetDefaultDirs(dest_con))           // Get file system directories in the dest instance
                             {
-                                if (GetDefaultDirs(dest_con))
+                                backuplog = HasTLog(src_con, src_dbname);   // Check if DB needs an explicity transaction log backup
+                                if (backuplog != -1)
                                 {
-                                    if (dest_overwrite)
+                                    ret= GetSourceData(src_con, src_dbname, save_to,backuplog); // Get a copy of the source data
+                                    if (ret==0)
                                     {
-                                        if (DropDestDB(dest_con, dest_dbname))
+                                        if (copy_from != "") proceed = CopyFiles(copy_from, src_dbname, copy_to);   // If files need copying, do it now
+                                        if (proceed)
                                         {
-                                            if(CopyDatabase(src_con, src_dbname, dest_con, dest_dbname)>0) ret=500;
-                                        }
-                                        else
-                                        {
-                                            ret = 400;
-                                        } // if..else: problem dropping destination DB?
-                                    }
-                                    else
-                                    {
-                                        if(CopyDatabase(src_con, src_dbname, dest_con, dest_dbname)>0) ret=500;
-                                    } // if..else: overwrite destination?
-                                } // if: got default directories on dest instance?
-                            } else {
-                                ret = 300;  // Problem with checking on transaction log
-                            } // if..else: got transaction log info?
-                        }
-                        else
+                                            if (dest_overwrite) proceed = DropDestDB(dest_con, dest_dbname); // Drop the destination DB to be replaced only once the files are safely within the instance's range for restore operations
+                                            if (proceed) ret = PutDestData(dest_con, dest_dbname, read_from, backuplog, src_dbname);
+
+                                            if (ret == 0)
+                                            {
+                                                if (cleanup) DoCleanUp(new string[] { save_to, copy_from, copy_to }, src_dbname, src_con); // If save_to is used, it will point to the same place as read_from
+
+                                                // Extras
+                                                if (setPIPESperms) ApplyPIPESperms(dest_con, dest_dbname);
+                                            } // if: PutDestData successful?
+                                        } // if: proceed with drop destination and restore?
+                                    } // if: GetSourceData
+                                }
+                                else
+                                {
+                                    ret = 300;
+                                } // if..else: HasTLog
+                            } // if: GetDefaultDirs
+                        } else
                         {
                             ret = 200;
-                            Message(string.Format("Database {0} does not exist in instance {1}, or there was an error checking on it. If there were problems, there should be an error message above this message.", src_dbname, src_instance));
-                        } // if..else: does source DB exist?
-                    } // if: connected?
-                } // if: to do stuff or not to do stuff
+                            Message(string.Format("Database {0} does not exist in instance {1}, or there was an error checking on it. If there were problems, there should be an error message above this one.", src_dbname, src_instance));
+                        } // if..else: SourceDBexists
+                    } // if: SqlConnect
+                } // if..else: passed argument sanity check?
             } // if..else: proper parameter count?
 
             if (Debugger.IsAttached)
@@ -146,90 +143,97 @@ namespace mssqlDBcopy
             return ret; // Return an errorcode to the caller
         } // Main
 
+
+        #region Arguments
+        /// <summary>Get environment variables</summary>
+        /// <returns>FALSE: errors, TRUE: success</returns>
+        private static bool GetEnvVars()
+        {
+            DebugMessage("GetEnvVars:start");
+            bool ret = true;
+            string act = "";
+            try
+            {
+                act = "MSSQLDBCOPY_PATH";
+                if (Environment.GetEnvironmentVariable("MSSQLDBCOPY_PATH") != null)
+                {
+                    string tmp= Environment.GetEnvironmentVariable("MSSQLDBCOPY_PATH");
+                    save_to = tmp;
+                    read_from = tmp;
+                } // if: MSSQLDBCOPY_PATH
+                act = "MSSQLDBCOPY_save_to";
+                if (Environment.GetEnvironmentVariable("MSSQLDBCOPY_SAVETO") != null) save_to = Environment.GetEnvironmentVariable("MSSQLDBCOPY_SAVETO");
+                act = "MSSQLDBCOPY_read_from";
+                if (Environment.GetEnvironmentVariable("MSSQLDBCOPY_READFROM") != null) read_from = Environment.GetEnvironmentVariable("MSSQLDBCOPY_READFROM");
+            }
+            catch (Exception ex)
+            {
+                ret = false;
+                Message(string.Format("WARNING: There was a problem checking on or retrieving the {0} environment variable: {1}", act, ex.ToString()));
+            }
+
+            DebugMessage(string.Format("GetEnvVars={0}", ret.ToString()));
+
+            return ret;
+        } // GetEnvVars
+
         /// <summary>Do the arguments supplied to the utility make sense?</summary>
-        /// <returns>TRUE=yes, FALSE=no</returns>
+        /// <returns>0=yes, nonzero=what doesn't make sense</returns>
         private static int DoArgumentsMakeSense()
         {
             int ret = 0;    // Be optimistic!
 
-            // Check holding path settings - BACKUP_TO and RESTORE_FROM will override PATH and environment variables
-            if ((holdingpath == "") && ((src_holdingpath == "") || (dest_holdingpath == "")))
+            // Check holding path settings - specify SAVE_TO and READ_FROM or PATH, but not both
+            if (((save_to == "") || (read_from == "")))
             {
                 ret = 100;
-                Message("ERROR: Please use either /PATH or both /BACKUP_TO and /RESTORE_FROM to specify a holding path for the files to stay during the transfer.");
-                nop = true;
+                Message("ERROR: Please use either /PATH or both /SAVE_TO and /READ_FROM to specify a place for the files to stay during the transfer.");
             } // if: is there a holding path?
 
-            // No source and destination holding paths specified, so use PATH for both
-            if ((holdingpath != "") && (src_holdingpath == "") && (dest_holdingpath == ""))
-            {
-                if (holdingpath.EndsWith(@"\")) holdingpath = holdingpath.Trim('\\');   // Remove trailing back slash from holding path
-                src_holdingpath = holdingpath;
-                dest_holdingpath = holdingpath;
-            } // if: is holdingpath empty?
+            // check COPY_FROM and COPY_TO
 
-            // Ensure [src|dst]_path and [save|copy|read] are not both being specified
-            if (
-                ((holdingpath != "") || (src_holdingpath != "") || (dest_holdingpath != ""))
-                &&
-                (copy_from != "")
+            // First, they should not be used if the database is being copied on the same instance - where's the sense in that?
+            if(
+                    ((copy_from != "") || (copy_to != ""))
+                    &&
+                    ( src_instance.ToUpper()==dest_instance.ToUpper())
                 )
             {
-                Message("ERROR: Please use either some combination of /PATH, /BACKUP_TO, and /RESTORE_FROM or the SAVE_TO/COPY_FROM/COPY_TO/READ_FROM options, but not both.");
-                nop = true;
-            } // if: conflicting source/dest/holding paths?
+                ret = 100;
+                Message("You cannot use /COPY_FROM and /COPY_TO when the source and destination are the same instance!");
+            } // if
+
+            // Second, if they're going to be used, they both must be specified.  At the same time, if they're not going to be used, 
+            //  neither of them should be specified.
+            // The logic here is "If they're both not blank, and they're not both blank, one or the other must have a value, which is bad."
+            //  Confusing, huh? Also, don't say anything if there's already been a parameter problem.  Why bother?
+            if ( (ret ==0) &&
+                !((copy_from=="") && (copy_to==""))
+                &&
+                !((copy_from != "") && (copy_to != ""))
+                )
+            {
+                ret = 100;
+                Message("You must specify both /COPY_FROM and /COPY_TO.");
+            } // if: COPY_FROM and COPY_TO check
 
             return ret;
         } // DoArgumentsMakeSense
 
-
-        /// <summary>Check if the source database exists</summary>
-        /// <param name="con">Connection to the source MSSQL instance</param>
-        /// <param name="dbname">The name of the source database</param>
-        /// <returns>TRUE: database exists, FALSE: database doesn't exist or there was an error</returns>
-        private static bool SourceDBexists(SqlConnection con, string dbname)
-        {
-            bool ret = true;    // Be optimistic!
-
-            DebugMessage(string.Format("SourceDBexists({0},{1})", con.DataSource, dbname));
-
-            try
-            {
-                using (SqlCommand cmd = con.CreateCommand())
-                {
-                    cmd.CommandText = string.Format("select count([name]) from sys.databases where [name] = '{0}'", dbname);
-                    object count = cmd.ExecuteScalar();
-                    if (int.Parse(count.ToString()) == 0) ret = false;
-                } // using: SqlCommand
-
-            } // try
-            catch (Exception ex)
-            {
-                ret = false;
-                Message(string.Format("Error checking if database exists: {0}", ex.ToString()));
-            } // catch
-
-            DebugMessage(string.Format("SourceDBexists = {0}", ret.ToString()));
-
-            return ret;
-        } // SourceDBexists
-
-        /// <summary>Debug messages</summary>
-        /// <param name="msg"></param>
-        private static void DebugMessage(string msg)
-        {
-            if(debug) Console.WriteLine(msg);
-        } // DebugMessage
-
         /// <summary>Parse command line arguments</summary>
         /// <param name="args">Array of command line arguments</param>
-        private static void ParseCommandLine(string[] args)
+        private static bool ParseCommandLine(string[] args)
         {
+            DebugMessage("ParseCommandLine() start\nArguments: " + String.Join("|", args));
+            bool ret = true;    // Be optimistic!
+
+            // Source and destination are always the first two arguments
             src_instance = args[0].Split(':')[0];
             src_dbname = args[0].Split(':')[1];
             dest_instance = args[1].Split(':')[0];
             dest_dbname = args[1].Split(':')[1];
 
+            // Now comes optional arguments which use a colon (i.e., /ARG:value)
             foreach (string sw in args)
             {
                 switch (sw.Split(':')[0].ToUpper())
@@ -246,7 +250,7 @@ namespace mssqlDBcopy
                             src_user = sw.Split(':')[1];
                             src_pass = sw.Split(':')[2];
                         }
-                        catch(Exception ex)
+                        catch (Exception ex)
                         {
                             Console.WriteLine("Error parsing source credentials: make sure it is in the format username:password\nExiting as a precaution.\nError: " + ex.ToString());
                             nop = true;
@@ -265,92 +269,196 @@ namespace mssqlDBcopy
                         }
                         break;
                     case "/NOP":
+                        Message("No operation mode enabled.");
                         nop = true;
                         break;
                     case "/DEBUG":
                         debug = true;
-                        Console.WriteLine("Debug mode is now on.");
+                        Message("Debug mode is now on.");
+                        break;
+                    case "/CLEANUP":
+                        cleanup = true;
                         break;
                 } // switch: sw
 
-                foreach(string arg in new string[] {"/PATH","/BACKUP_TO","/RESTORE_FROM", "/SAVE_TO", "/COPY_FROM", "/COPY_TO", "/READ_FROM", })
+                // Arguments using an equl sign (i.e., /ARG=value)
+                foreach (string arg in new string[] { "/PATH", "/SAVE_TO", "/COPY_FROM", "/COPY_TO", "/READ_FROM", })
                 {
                     if (sw.ToUpper().StartsWith(arg))
                     {
                         switch (arg)
                         {
-                            case "/PATH": holdingpath = sw.Split('=')[1];
+                            case "/PATH":
+                                if ((save_to=="") && (read_from == "")){
+                                    save_to = sw.Split('=')[1];
+                                    read_from = save_to;
+                                }
+                                else
+                                {
+                                    ret = false;
+                                    Message("/SAVE_TO and/or /READ_FROM already specified - /PATH would override both of them.  Do you want to do this?  As a precaution, exiting.");
+                                } // if..else
                                 break;
-                            case "/BACKUP_TO":
-                                src_holdingpath = sw.Split('=')[1];
+                            case "/SAVE_TO":
+                                if (save_to == "")
+                                {
+                                    save_to = sw.Split('=')[1];
+                                }
+                                else
+                                {
+                                    ret = false;
+                                    Message("/PATH already specified - do you really want to override it with /SAVE_TO?  Exiting as a precaution.");
+                                } // if
                                 break;
-                            case "/RESTORE_FROM":
-                                dest_holdingpath = sw.Split('=')[1];
-                                break;
-                            case "/SAVE_TO = path":
-                                save_to = sw.Split('=')[1];
-                                break;
-                            case "/COPY_FROM = path":
+                            case "/COPY_FROM":
                                 copy_from = sw.Split('=')[1];
                                 break;
-                            case "/ COPY_TO = path":
+                            case "/COPY_TO":
                                 copy_to = sw.Split('=')[1];
                                 break;
-                            case "/ READ_FROM = path":
-                                read_from = sw.Split('=')[1];
+                            case "/READ_FROM":
+                                if (read_from == "")
+                                {
+                                    read_from = sw.Split('=')[1];
+                                }
+                                else
+                                {
+                                    ret = false;
+                                    Message("/PATH already specified - do you really want to override it with /READ_FROM?  Exiting as a precaution.");
+                                }
+                                break;
+                            default:
+                                Message(string.Format("Unknown option '{0}' : skipping", arg));
                                 break;
                         } // switch: which path
                     } // if: holding path specified?
                 } // foreach: iterate over arguments which use an = instead of a colon
             } // foreach: iterate over parameters
+
+            DebugMessage("ParseCommandLine = " + ret.ToString());
+            return ret;
         } // ParseCommandLine
 
-        /// <summary>Returns the logical names for database and transaction log</summary>
-        /// <param name="con">A connection to a SQL instance to process the request</param>
-        /// <param name="backupfile">The backup file from which to obtain the logical names</param>
-        /// <returns>Success: data-logical-name|transaction-log-logical-name  Error: a blank string</returns>
-        private static string GetLogicalNames(SqlConnection con, string backupfile)
-        {
-            string ret = "";
-            string d = "";
-            string l = "";
+        #endregion
 
-            DebugMessage(string.Format("GetLogicalNames({0},{1})", con.DataSource, backupfile));
+        #region "Support"
+
+        /// <summary>Clean up after ourselves</summary>
+        /// <param name="copy_from"></param>
+        /// <param name="src_dbname"></param>
+        /// <param name="save_to"></param>
+        /// <param name="dest_dbname"></param>
+        /// <remarks>If using COPY_FROM and SAVE_TO parameters, deletion of files is straightforward.  Otherwise, the BAK file may not be directly accessible by this utility; build, execute, and remove a CmdShell SQL Server job to take care of the file in that case.</remarks>
+        private static void DoCleanUp(string[] locations, string src_dbname, SqlConnection src_instance)
+        {
+            string act = "";
+
+            DebugMessage(String.Format("DoCleanUp({0},{1},{2}:{3})", string.Join("|", locations), src_dbname, src_instance.DataSource, src_instance.Database));
+            if (copy_from != "")
+            {
+                try
+                {
+                    foreach (string path in locations)
+                    {
+                        if (path != "")
+                        {
+                            string tmp = string.Format(@"{0}\{1}.bak", path, src_dbname);
+                            act = "deleting " + tmp;
+                            DebugMessage(act);
+                            if (System.IO.File.Exists(tmp)) System.IO.File.Delete(tmp);
+                        } // if: path is not empty
+                    } // foreach
+                } // try
+                catch (Exception ex)
+                {
+                    Message(String.Format("WARNING: Error {0}: {1}", act, ex.ToString()));
+                } // catch
+            }
+            else   // Create a job because there's no way to get to the files directly
+            {
+                try
+                {
+                    string jobname = String.Concat(src_instance, System.Guid.NewGuid().ToString());
+
+                    DebugMessage(string.Format("Creating job {0}", jobname));
+                    act = "retrieving job spec";
+                    string jobstr = Properties.Resources.cleanup_job;
+
+                    // Build the delete commands
+                    string tmp = "";
+                    foreach (string path in locations)
+                    {
+                        tmp += string.Format(@"if exists {0}\{1}.bak del {0}\{1}.bak\n", path, src_dbname);
+                    } // foreach
+
+                    //Clean up source instance file - it's a shared location so there's no need to do a separate cleanup on the destination instance
+                    act = "customizing T-SQL";
+                    jobstr = jobstr.Replace("!INSTANCE!", src_instance.DataSource);
+                    jobstr = jobstr.Replace("!JOBNAME!", jobname);
+                    jobstr = jobstr.Replace("!FILESPEC!", tmp);
+
+                    DebugMessage("Installing job...");
+                    DebugMessage(jobstr);
+                    act = "installing job";
+                    using (SqlCommand cmd = src_instance.CreateCommand())
+                    {
+                        cmd.CommandText = jobstr;
+                        cmd.ExecuteNonQuery();
+
+                        DebugMessage("Running job...");
+                        act = "running job";
+                        cmd.CommandText = String.Format("exec msdb.dbo.sp_start_job @job_name='{0}'", jobname);
+                        cmd.ExecuteNonQuery();
+                        DebugMessage("Waiting 1 second...");
+                        System.Threading.Thread.Sleep(1000);    // Wait a second to let the job finish
+
+                        DebugMessage("Deleting job...");
+                        act = "removing job " + jobname;
+                        cmd.CommandText = String.Format("exec msdb.dbo.sp_delete_job @job_name='{0}'", jobname);
+                        cmd.ExecuteNonQuery();
+                    } // SqlCommand
+                }
+                catch (Exception ex)
+                {
+                    Message(String.Format("WARNING: Error {0}: {1}", act, ex.ToString()));
+                }
+            } // if..else: easy way or complicated way?
+
+        } // DoCleanUp
+
+        /// <summary>Copy a file from source to destination</summary>
+        /// <param name="copy_from">Where the source file lives</param>
+        /// <param name="src_dbname">The filename part of the source file; .BAK is added by this subroutine</param>
+        /// <param name="copy_to">The destination path for the copy</param>
+        /// <returns></returns>
+        private static bool CopyFiles(string copy_from, string src_dbname, string copy_to)
+        {
+            DebugMessage(string.Format("CopyFiles({0},{1},{2})", copy_from, src_dbname, copy_to));
+            bool ret = true;
+
+            Message("Transferring files.  Note if this is a large database, it will take a while...");
 
             try
             {
-                using (SqlCommand cmd = con.CreateCommand())
-                {
-                    cmd.CommandText = string.Format("RESTORE FILELISTONLY FROM DISK='{0}'",backupfile);
-                    SqlDataReader rdr = cmd.ExecuteReader();
-                    if (rdr.HasRows)
-                    {
-                        while (rdr.Read())
-                        {
-                            switch (rdr["type"])
-                            {
-                                case "D":
-                                    d = rdr["LogicalName"].ToString();
-                                    break;
-                                case "L":
-                                    l = rdr["LogicalName"].ToString();
-                                    break;
-                            } // switch: type
-                        } // while
-                    } // if: rows returned?
-                    rdr.Close();
-                } // using: SqlCommand
-
-                ret= (l != "") ? d+"|"+ l : d;  // If there's no log, just return the logical name for the data
+                System.IO.File.Copy(
+                    string.Format(@"{0}\{1}.BAK", copy_from, src_dbname),
+                    string.Format(@"{0}\{1}.BAK", copy_to, src_dbname),
+                    true    // Overwrite existing file
+                    );
             } // try
             catch (Exception ex)
             {
-                Message(string.Format("Error getting logical names: {0}", ex.ToString()));
+                ret = false;
+                Message(string.Format(@"Error copying from {0}\{1} to {2}\{1} : {3}", copy_from, src_dbname, copy_to, ex.ToString()));
             } // catch
 
-            DebugMessage(string.Format("GetLogicalNames = {0}", ret));
+            if (ret) Message("Transfer complete!");
+
+            DebugMessage("CopyFiles=" + ret.ToString());
             return ret;
-        } // GetLogicalNames
+        } // CopyFiles
+
+        #endregion 
 
         #region "Permission sets"
         /// <summary>Apply PIPES permissions to users of the new database</summary>
@@ -388,143 +496,91 @@ namespace mssqlDBcopy
         } // ApplyPIPESperms
         #endregion
 
-        /// <summary>Get default MDF and LDF directories</summary>
-        /// <param name="con"></param>
-        /// <returns>TRUE=success, FALSE=error</returns>
-        private static bool GetDefaultDirs(SqlConnection con)
+        #region "Messaging"
+        /// <summary>Debug messages</summary>
+        /// <param name="msg"></param>
+        private static void DebugMessage(string msg)
         {
-            DebugMessage(string.Format("GetDefaultDirs({0})", con.DataSource));
-            bool ret = true;
-
+            if (debug) Console.WriteLine(msg);
             try
             {
-                using (SqlCommand cmd = con.CreateCommand())
-                {
-                    cmd.CommandText = "SELECT DataPath = CONVERT(sysname, SERVERPROPERTY('InstanceDefaultDataPath')),LogPath = CONVERT(sysname, SERVERPROPERTY('InstanceDefaultLogPath'))";
-                    SqlDataReader rdr = cmd.ExecuteReader();
-                    if (rdr.HasRows)
-                    {
-                        if (rdr.Read())
-                        {
-                            MDFdir = rdr["DataPath"].ToString();
-                            LDFdir = rdr["LogPath"].ToString();
-                        }
-                    }
-                    rdr.Close();
-                } // using: SqlCommand
+                System.IO.File.AppendAllText(logfile, string.Format("DEBUG: {0}\n", msg));
             } // try
             catch (Exception ex)
             {
-                Message(string.Format("Error getting default directories: {0}", ex.ToString()));
-                ret = false;
+                // Do nothing - if there's an error logging debugging output another developer can do something here if they choose.
             } // catch
-            DebugMessage(string.Format("GetDefaultDirs = {0}", ret.ToString()));
-            return ret;
+        } // DebugMessage
+
+        /// <summary>Centralized messaging</summary>
+        /// <param name="msg"></param>
+        private static void Message(string msg)
+        {
+            try
+            {
+                System.IO.File.AppendAllText(logfile, msg + "\n");
+            }
+            catch (Exception ex)
+            {
+                // Do nothing - if there's an error logging output another developer can do something here if they choose.
+            } // catch
+
+            Console.WriteLine(msg);
         }
 
-        /// <summary>Check if the specified database needs to have a transaction log backup</summary>
-        /// <param name="con"></param>
-        /// <param name="src_dbname"></param>
-        /// <returns>1=yes, it has a transaction log, 0=no, there's no transaction log, -1=error</returns>
-        private static int HasTLog(SqlConnection con, string src_dbname)
-        {
-            DebugMessage(string.Format("HasTLog({0},{1})", con.DataSource, src_dbname));
-            int ret = 0;    // Assume simple recovery model
+        #endregion
 
-            try
-            {
-                using (SqlCommand cmd = con.CreateCommand())
-                {
-                    cmd.CommandText = string.Format("SELECT recovery_model_desc FROM master.sys.databases WHERE name='{0}'",src_dbname);
-                    object value=cmd.ExecuteScalar();
-                    switch (value.ToString().ToUpper()) // Use a switch to make handling multiple possible values and future expansion easier
-                    {
-                        case "BULK_LOGGED":
-                        case "FULL":
-                            ret = 1;
-                            break;
-                    } // switch
-                } // using: SqlCommand
-            } // try
-            catch (Exception ex)
-            {
-                Message(string.Format("Error checking database recovery model: {0}", ex.ToString()));
-                ret = -1;
-            } // catch
-
-            DebugMessage(string.Format("HasTLog = {0}", ret));
-
-            return ret;
-        } // HasTLog
-
-        /// <summary>Execute the given SQL, with the expectation that it doesn't return a result set</summary>
-        /// <param name="con">SQL instance</param>
-        /// <param name="sql">The SQL to execute</param>
-        /// <param name="type">Specify either SQL command (default), or stored procedure</param>
-        /// <returns>Success: TRUE, errors: FALSE</returns>
-        private static bool RunSQL(SqlConnection con, string sql, System.Data.CommandType type=System.Data.CommandType.Text)
-        {
-            DebugMessage(string.Format("RunSQL({0},{1})", con.DataSource, sql.Substring(0,20)));
-            bool ret = true;
-
-            try
-            {
-                using (SqlCommand cmd = con.CreateCommand())
-                {
-                    cmd.CommandText = sql;
-                    cmd.CommandType = type;
-                    cmd.CommandTimeout = 600;   // 10 minutes
-                    DebugMessage(string.Format("\tCommandTimeout = {0}", cmd.CommandTimeout));
-                    cmd.ExecuteNonQuery();
-                } // using: SqlCommand
-            }
-            catch(Exception ex)
-            {
-                Message(string.Format("Error running {0}\n{1}", sql, ex.ToString()));
-                ret = false;
-            }
-            DebugMessage(string.Format("RunSQL = {0}", ret));
-            return ret;
-        } // RunSQL
-
-        /// <summary>Copies the database</summary>
-        /// <param name="src_con"></param>
-        /// <param name="src_dbname"></param>
-        /// <param name="dest_con"></param>
-        /// <param name="dest_dbname"></param>
-        /// <returns>0=success, non-zero indicates an error</returns>
-        private static int CopyDatabase(SqlConnection src_con, string src_dbname, SqlConnection dest_con, string dest_dbname)
+        #region "DB copying"
+        /// <summary>Take a backup of MDF (and LDF if applicable)</summary>
+        /// <param name="src_con">Connection to the source instance</param>
+        /// <param name="src_dbname">Name of the DB on the soruce instance to copy</param>
+        /// <param name="save_to">Write the backup file(s) here from the perspective of the source instance</param>
+        /// <param name="backuplog">1=there's a transaction log to include in the backup</param>
+        /// <returns>0=success, nonzero=error</returns>
+        private static int GetSourceData(SqlConnection src_con, string src_dbname, string save_to, int backuplog)
         {
             int ret = 0;    // Be optimistic!
 
-            DebugMessage(string.Format("CopyDatabase({0},{1},{2},{3})", src_con.DataSource,src_dbname,dest_con.DataSource,dest_dbname));
-            bool ok = true;
+            DebugMessage(string.Format("GetSourceData({0},{1},{2},{3})", src_con.DataSource, src_dbname, save_to, backuplog));
 
+            bool ok = true;
             string sql = "";
 
             // Make a copy-only backup of the source database
-            Message("Get copy of source DB (MDF)");
-            if (!RunSQL(src_con, string.Format(@"BACKUP DATABASE [{0}] TO DISK = N'{2}\{0}.bak' WITH COPY_ONLY, FORMAT, INIT, NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance, src_holdingpath)))
-            {
-                ok = false;
-                ret = 1;
-            } // if: database backup successful?
-                
+            DebugMessage("Get copy of source DB (MDF)");
+            sql = string.Format(
+                @"BACKUP DATABASE [{0}] TO DISK = N'{2}\{0}.bak' WITH COPY_ONLY, FORMAT, INIT, NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10",
+                src_dbname,     // 0
+                dest_instance,  // 1 
+                save_to         // 2
+            );
+            DebugMessage(sql);
+            if (!nop) ok = RunSQL(src_con, sql);
+            if (!ok) ret = 1;
 
             if (ok && (backuplog == 1))
             {
-                Message("Get copy of source DB (LDF)");
-                if (!RunSQL(src_con, string.Format(@"BACKUP LOG [{0}] TO  DISK = N'{2}\{0}.bak' WITH  COPY_ONLY, NOFORMAT, NOINIT,  NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance, src_holdingpath)))
-                {
-                    ok = false;
-                    ret = 2;
-                } // if: log backup ok?
-                    
+                DebugMessage("Get copy of source DB (LDF)");
+                sql = string.Format(
+                    @"BACKUP LOG [{0}] TO  DISK = N'{2}\{0}.bak' WITH  COPY_ONLY, NOFORMAT, NOINIT,  NAME = N'{0}-Database (t-logs) copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10",
+                    src_dbname,     // 0
+                    dest_instance,  // 1
+                    save_to         // 2
+                );
+                DebugMessage(sql);
+                if (!nop) ok = RunSQL(src_con, sql);
+                if (!ok) ret = 2;
             } // if: okay and there's a transaction log?
 
             if (ok)
             {
-                string tmp = GetLogicalNames(src_con, string.Format(@"{0}\{1}.bak",src_holdingpath, src_dbname));
+                DebugMessage(string.Format(@"Call GetLogicalNames({0},{1}\{2}.bak)", src_con.DataSource, save_to, src_dbname));
+                string tmp = "";
+
+                // Getting the logical names this way avoids errors when in no operation mode because there won't be a backup file to read
+                if (!nop) tmp = GetLogicalNames(src_con, string.Format(@"{0}\{1}.bak", save_to, src_dbname)); // save_to
+                DebugMessage("GetLogicalNames result=" + tmp);
+
                 if (tmp != "")
                 {
                     if (tmp.Contains("|"))
@@ -544,58 +600,169 @@ namespace mssqlDBcopy
                 } // if..else: got logical names?
             } // if: okay to obtain logical names?
 
-                if (ok)
-            {
-                Message("Bringing copy to destination instance");
-                try
-                {
-                    Message("\tDatabase");
-                    //SqlCommand cmd = dest_con.CreateCommand();
-                    //cmd.CommandText = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  REPLACE,  STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname,logicalname_d,logicalname_l,holdingpath);
-                    //cmd.ExecuteNonQuery();
-
-                    sql = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  !REPL!STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, logicalname_d, logicalname_l, dest_holdingpath);
-                    if (dest_overwrite)
-                    {    // Don't use REPLACE if we're not actually replacing a database!
-                        sql = sql.Replace("!REPL!", "REPLACE, ");
-                    } else
-                    {
-                        sql = sql.Replace("!REPL!", "");
-                    } // if..else: use REPLACE?
-                    if (backuplog != 1) sql = sql.Replace(", NORECOVERY,", ", RECOVERY,"); // No transaction log, so this is the only RESTORE to run
-                    RunSQL(dest_con, sql);
-
-                    if (backuplog == 1)
-                    {
-                        Message("\tTransaction log");
-                        RunSQL(dest_con, string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{4}\{3}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, dest_holdingpath));
-                        //cmd.CommandText = string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{4}\{3}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, holdingpath);
-                        //cmd.ExecuteNonQuery();
-                    } // if: has transaction log?
-
-                    Message("\tSet multiuser");
-                    RunSQL(dest_con, string.Format(@"ALTER DATABASE[{0}] SET MULTI_USER", dest_dbname));
-                    //cmd.CommandText = string.Format(@"ALTER DATABASE[{0}] SET MULTI_USER", dest_dbname);
-                    //cmd.ExecuteNonQuery();
-
-                    // Clean up after ourselves
-                    System.IO.File.Delete(string.Format(@"{0}\{1}.bak",src_holdingpath, src_dbname));
-                    if(System.IO.File.Exists(string.Format(@"{0}\{1}.bak", dest_holdingpath, dest_dbname)))
-                        System.IO.File.Delete(string.Format(@"{0}\{1}.bak", dest_holdingpath, dest_dbname));
-
-                    // Extras
-                    if (setPIPESperms) ApplyPIPESperms(dest_con, dest_dbname);
-
-                } // try
-                catch (Exception ex)
-                {
-                    ret = 100;  // General exception
-                    Message("Error restoring destination database: " + ex.ToString());
-                } // catch
-            } // if: is ok?
+            if (nop) ret = 0;    // Force an all clear if we're running in no operation mode
 
             return ret;
-        } // CopyDatabase
+        } // GetSourceData
+
+        /// <summary>On the destination instance, restore the database from the backup files</summary>
+        /// <param name="dest_con"></param>
+        /// <param name="dest_dbname"></param>
+        /// <param name="read_from"></param>
+        /// <param name="backuplog"></param>
+        /// <param name="bak_name"></param>
+        /// <returns>0=success, nonzero=error code</returns>
+        private static int PutDestData(SqlConnection dest_con, string dest_dbname, string read_from, int backuplog, string bak_name)
+        {
+            int ret = 0;
+            string sql = "";
+
+            DebugMessage(string.Format("PutDestData({0},{1},{2},{3},{4})", dest_con.DataSource, dest_dbname, read_from, backuplog, bak_name));
+
+            Message("Writing destination database");
+            try
+            {
+                Message("\tDatabase");
+                //SqlCommand cmd = dest_con.CreateCommand();
+                //cmd.CommandText = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  REPLACE,  STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname,logicalname_d,logicalname_l,holdingpath);
+                //cmd.ExecuteNonQuery();
+
+                sql = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  !REPL!STATS = 5",
+                    dest_dbname,        // 0
+                    MDFdir,             // 1
+                    LDFdir,             // 2
+                    bak_name,           // 3
+                    logicalname_d,      // 4
+                    logicalname_l,      // 5
+                    read_from           // 6
+                    );
+                if (dest_overwrite)
+                {    // Don't use REPLACE if we're not actually replacing a database!
+                    sql = sql.Replace("!REPL!", "REPLACE, ");
+                }
+                else
+                {
+                    sql = sql.Replace("!REPL!", "");
+                } // if..else: use REPLACE?
+                if (backuplog != 1) sql = sql.Replace(", NORECOVERY,", ", RECOVERY,"); // No transaction log, so this is the only RESTORE to run
+                DebugMessage(sql);
+                if (!nop) RunSQL(dest_con, sql); // Run the RESTORE DATABASE
+
+                if (backuplog == 1)
+                {
+                    Message("\tTransaction log");
+                    sql = string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{1}\{2}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5",
+                        dest_dbname,    // 0 
+                        read_from,      // 1
+                        bak_name        // 2
+                        );
+                    DebugMessage(sql);
+                    if (!nop) RunSQL(dest_con, sql);  // Run the RESTORE LOG
+                    //cmd.CommandText = string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{4}\{3}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, holdingpath);
+                    //cmd.ExecuteNonQuery();
+                } // if: has transaction log?
+
+                DebugMessage("\tSet multiuser");
+                if (!nop) RunSQL(dest_con, string.Format(@"ALTER DATABASE[{0}] SET MULTI_USER", dest_dbname));
+                //cmd.CommandText = string.Format(@"ALTER DATABASE[{0}] SET MULTI_USER", dest_dbname);
+                //cmd.ExecuteNonQuery();
+
+            } // try
+            catch (Exception ex)
+            {
+                ret = 100;  // General exception
+                Message("Error restoring destination database: " + ex.ToString());
+            } // catch
+
+            return ret;
+        } // PutDestData
+        #endregion
+
+        #region "DB operations"
+
+        /// <summary>Connect to the source and destination instances</summary>
+        /// <returns>TRUE: success, FALSE: error</returns>
+        /// <remarks>Uses the context of the user running this utility if usernames and passwords aren't specified</remarks>
+        private static bool SqlConnect()
+        {
+            bool ret = true;
+            string connstr = "";
+
+            try
+            {
+                Message("Connecting to source instance");
+                if (src_user == "")
+                {
+                    connstr = string.Format("Server={0};Integrated Security=true;", src_instance);
+                }
+                else
+                {
+                    connstr = string.Format("Server={0};UID={1};PWD={2};", src_instance, src_user, "src_pass");
+                } // if..else: use username/password?
+                src_con = new SqlConnection(connstr);
+                src_con.Open();
+            }
+            catch (Exception ex)
+            {
+                ret = false;
+                Message("Error connecting to source instance: " + ex.ToString());
+            }
+
+            if (ret)
+            {
+                try
+                {
+                    Message("Connecting to destination instance");
+                    if (dest_user == "")
+                    {
+                        connstr = string.Format("Server={0};Integrated Security=true;", dest_instance);
+                    }
+                    else
+                    {
+                        connstr = string.Format("Server={0};UID={1};PWD={2};", dest_instance, dest_user, "dest_pass");
+                    } // if..else: use username/password?
+                    dest_con = new SqlConnection(connstr);
+                    dest_con.Open();
+                }
+                catch (Exception ex)
+                {
+                    ret = false;
+                    Message("Error connecting to destination instance: " + ex.ToString());
+                }
+            } // if: connected to source instance?
+
+            return ret;
+        } // SqlConnect
+
+        /// <summary>Execute the given SQL, with the expectation that it doesn't return a result set</summary>
+        /// <param name="con">SQL instance</param>
+        /// <param name="sql">The SQL to execute</param>
+        /// <param name="type">Specify either SQL command (default), or stored procedure</param>
+        /// <returns>Success: TRUE, errors: FALSE</returns>
+        private static bool RunSQL(SqlConnection con, string sql, System.Data.CommandType type = System.Data.CommandType.Text)
+        {
+            DebugMessage(string.Format("RunSQL({0},{1})", con.DataSource, sql));
+            bool ret = true;
+
+            try
+            {
+                using (SqlCommand cmd = con.CreateCommand())
+                {
+                    cmd.CommandText = sql;
+                    cmd.CommandType = type;
+                    cmd.CommandTimeout = 600;   // 10 minutes
+                    DebugMessage(string.Format("\tCommandTimeout = {0}", cmd.CommandTimeout));
+                    cmd.ExecuteNonQuery();
+                } // using: SqlCommand
+            }
+            catch (Exception ex)
+            {
+                Message(string.Format("Error running {0}\n{1}", sql, ex.ToString()));
+                ret = false;
+            }
+            DebugMessage(string.Format("RunSQL = {0}", ret));
+            return ret;
+        } // RunSQL
 
         /// <summary>Drop the specified database on the given instance</summary>
         /// <param name="instance"></param>
@@ -630,65 +797,270 @@ namespace mssqlDBcopy
             return ret;
         } // DropDestDB
 
-        /// <summary>Connect to the source and destination instances</summary>
-        /// <returns>TRUE: success, FALSE: error</returns>
-        /// <remarks>Uses the context of the user running this utility if usernames and passwords aren't specified</remarks>
-        private static bool SqlConnect()
+        /// <summary>Get default MDF and LDF directories</summary>
+        /// <param name="con">Connection to the SQL Server instance</param>
+        /// <returns>TRUE=success, FALSE=error</returns>
+        private static bool GetDefaultDirs(SqlConnection con)
         {
+            DebugMessage(string.Format("GetDefaultDirs({0})", con.DataSource));
             bool ret = true;
-            string connstr = "";
 
             try
             {
-                Message("Connecting to source instance");
-                if (src_user == "")
+                using (SqlCommand cmd = con.CreateCommand())
                 {
-                    connstr = string.Format("Server={0};Integrated Security=true;", src_instance);
-                }
-                else
+                    cmd.CommandText = "SELECT DataPath = CONVERT(sysname, SERVERPROPERTY('InstanceDefaultDataPath')),LogPath = CONVERT(sysname, SERVERPROPERTY('InstanceDefaultLogPath'))";
+                    SqlDataReader rdr = cmd.ExecuteReader();
+                    if (rdr.HasRows)
+                    {
+                        if (rdr.Read())
+                        {
+                            MDFdir = rdr["DataPath"].ToString();
+                            LDFdir = rdr["LogPath"].ToString();
+                        }
+                    }
+                    rdr.Close();
+                } // using: SqlCommand
+            } // try
+            catch (Exception ex)
+            {
+                Message(string.Format("Error getting default directories: {0}", ex.ToString()));
+                ret = false;
+            } // catch
+            DebugMessage(string.Format("GetDefaultDirs = {0}", ret.ToString()));
+            return ret;
+        } // GetDefaultDirs
+
+        /// <summary>Check if the specified database needs has a transaction log to include in the backup</summary>
+        /// <param name="con">Connection to the database instance</param>
+        /// <param name="src_dbname">Name of the database to check for a transaction log</param>
+        /// <returns>1=yes, it has a transaction log, 0=no, there's no transaction log, -1=error</returns>
+        private static int HasTLog(SqlConnection con, string src_dbname)
+        {
+            DebugMessage(string.Format("HasTLog({0},{1})", con.DataSource, src_dbname));
+            int ret = 0;    // Assume simple recovery model
+
+            try
+            {
+                using (SqlCommand cmd = con.CreateCommand())
                 {
-                    connstr = string.Format("Server={0};UID={1};PWD={2};", src_instance, src_user, src_pass);
-                } // if..else: use username/password?
-                src_con = new SqlConnection(connstr);
-                src_con.Open();
-            }
-            catch(Exception ex)
+                    cmd.CommandText = string.Format("SELECT recovery_model_desc FROM master.sys.databases WHERE name='{0}'", src_dbname);
+                    object value = cmd.ExecuteScalar();
+                    switch (value.ToString().ToUpper()) // Use a switch to make handling multiple possible values and future expansion easier
+                    {
+                        case "BULK_LOGGED":
+                        case "FULL":
+                            ret = 1;
+                            break;
+                    } // switch
+                } // using: SqlCommand
+            } // try
+            catch (Exception ex)
+            {
+                Message(string.Format("Error checking database recovery model: {0}", ex.ToString()));
+                ret = -1;
+            } // catch
+
+            DebugMessage(string.Format("HasTLog = {0}", ret));
+
+            return ret;
+        } // HasTLog
+
+        /// <summary>Check if the source database exists</summary>
+        /// <param name="con">Connection to the source MSSQL instance</param>
+        /// <param name="dbname">The name of the source database</param>
+        /// <returns>TRUE: database exists, FALSE: database doesn't exist or there was an error</returns>
+        private static bool SourceDBexists(SqlConnection con, string dbname)
+        {
+            bool ret = true;    // Be optimistic!
+
+            DebugMessage(string.Format("SourceDBexists({0},{1})", con.DataSource, dbname));
+
+            try
+            {
+                using (SqlCommand cmd = con.CreateCommand())
+                {
+                    cmd.CommandText = string.Format("select count([name]) from sys.databases where [name] = '{0}'", dbname);
+                    object count = cmd.ExecuteScalar();
+                    if (int.Parse(count.ToString()) == 0) ret = false;
+                } // using: SqlCommand
+
+            } // try
+            catch (Exception ex)
             {
                 ret = false;
-                Message("Error connecting to source instance: " + ex.ToString());
-            }
+                Message(string.Format("Error checking if database exists: {0}", ex.ToString()));
+            } // catch
 
-            if (ret)
+            DebugMessage(string.Format("SourceDBexists = {0}", ret.ToString()));
+
+            return ret;
+        } // SourceDBexists
+
+        /// <summary>Returns the logical names for database and transaction log</summary>
+        /// <param name="con">A connection to a SQL instance to process the request</param>
+        /// <param name="backupfile">The backup file from which to obtain the logical names</param>
+        /// <returns>Success: data-logical-name|transaction-log-logical-name  Error: a blank string</returns>
+        private static string GetLogicalNames(SqlConnection con, string backupfile)
+        {
+            string ret = "";
+            string d = "";
+            string l = "";
+
+            DebugMessage(string.Format("GetLogicalNames({0},{1})", con.DataSource, backupfile));
+
+            try
             {
-                try
+                using (SqlCommand cmd = con.CreateCommand())
                 {
-                    Message("Connecting to destination instance");
-                    if (dest_user == "")
+                    cmd.CommandText = string.Format("RESTORE FILELISTONLY FROM DISK='{0}'", backupfile);
+                    SqlDataReader rdr = cmd.ExecuteReader();
+                    if (rdr.HasRows)
                     {
-                        connstr = string.Format("Server={0};Integrated Security=true;", dest_instance);
+                        while (rdr.Read())
+                        {
+                            switch (rdr["type"])
+                            {
+                                case "D":
+                                    d = rdr["LogicalName"].ToString();
+                                    break;
+                                case "L":
+                                    l = rdr["LogicalName"].ToString();
+                                    break;
+                            } // switch: type
+                        } // while
+                    } // if: rows returned?
+                    rdr.Close();
+                } // using: SqlCommand
+
+                ret = (l != "") ? d + "|" + l : d;  // If there's no log, just return the logical name for the data
+            } // try
+            catch (Exception ex)
+            {
+                Message(string.Format("Error getting logical names: {0}", ex.ToString()));
+            } // catch
+
+            DebugMessage(string.Format("GetLogicalNames = {0}", ret));
+            return ret;
+        } // GetLogicalNames
+
+        #endregion
+
+        #region "Deprecated"
+
+        /// <summary>Copies the database</summary>
+        /// <param name="src_con"></param>
+        /// <param name="src_dbname"></param>
+        /// <param name="dest_con"></param>
+        /// <param name="dest_dbname"></param>
+        /// <returns>0=success, non-zero indicates an error</returns>
+        private static int CopyDatabase(SqlConnection src_con, string src_dbname, SqlConnection dest_con, string dest_dbname)
+        {
+            int ret = 0;    // Be optimistic!
+
+            DebugMessage(string.Format("CopyDatabase({0},{1},{2},{3})", src_con.DataSource, src_dbname, dest_con.DataSource, dest_dbname));
+            bool ok = true;
+
+            string sql = "";
+
+            // Make a copy-only backup of the source database
+            Message("Get copy of source DB (MDF)");
+            if (!RunSQL(src_con, string.Format(@"BACKUP DATABASE [{0}] TO DISK = N'{2}\{0}.bak' WITH COPY_ONLY, FORMAT, INIT, NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance, save_to)))
+            {
+                ok = false;
+                ret = 1;
+            } // if: database backup successful?
+
+
+            if (ok && (backuplog == 1))
+            {
+                Message("Get copy of source DB (LDF)");
+                if (!RunSQL(src_con, string.Format(@"BACKUP LOG [{0}] TO  DISK = N'{2}\{0}.bak' WITH  COPY_ONLY, NOFORMAT, NOINIT,  NAME = N'{0}-Database copy to {1}', SKIP, NOREWIND, NOUNLOAD,  STATS = 10", src_dbname, dest_instance, save_to)))
+                {
+                    ok = false;
+                    ret = 2;
+                } // if: log backup ok?
+
+            } // if: okay and there's a transaction log?
+
+            if (ok)
+            {
+                string tmp = GetLogicalNames(src_con, string.Format(@"{0}\{1}.bak", save_to, src_dbname));
+                if (tmp != "")
+                {
+                    if (tmp.Contains("|"))
+                    {
+                        logicalname_d = tmp.Split('|')[0];
+                        logicalname_l = tmp.Split('|')[1];
                     }
                     else
                     {
-                        connstr = string.Format("Server={0};UID={1};PWD={2};", dest_instance, dest_user, dest_pass);
-                    } // if..else: use username/password?
-                    dest_con = new SqlConnection(connstr);
-                    dest_con.Open();
+                        logicalname_d = tmp;
+                    } // if..else: how many logical names?
                 }
+                else
+                {
+                    ok = false;
+                    ret = 3;    // Logical names not obtained successfully
+                } // if..else: got logical names?
+            } // if: okay to obtain logical names?
+
+            if (ok)
+            {
+                Message("Bringing copy to destination instance");
+                try
+                {
+                    Message("\tDatabase");
+                    //SqlCommand cmd = dest_con.CreateCommand();
+                    //cmd.CommandText = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  REPLACE,  STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname,logicalname_d,logicalname_l,holdingpath);
+                    //cmd.ExecuteNonQuery();
+
+                    sql = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  !REPL!STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, logicalname_d, logicalname_l, read_from);
+                    if (dest_overwrite)
+                    {    // Don't use REPLACE if we're not actually replacing a database!
+                        sql = sql.Replace("!REPL!", "REPLACE, ");
+                    }
+                    else
+                    {
+                        sql = sql.Replace("!REPL!", "");
+                    } // if..else: use REPLACE?
+                    if (backuplog != 1) sql = sql.Replace(", NORECOVERY,", ", RECOVERY,"); // No transaction log, so this is the only RESTORE to run
+                    RunSQL(dest_con, sql);
+
+                    if (backuplog == 1)
+                    {
+                        Message("\tTransaction log");
+                        RunSQL(dest_con, string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{4}\{3}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, read_from));
+                        //cmd.CommandText = string.Format(@"RESTORE LOG [{0}] FROM  DISK = N'{4}\{3}.bak' WITH  FILE = 1, NOUNLOAD,  RECOVERY, STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname, holdingpath);
+                        //cmd.ExecuteNonQuery();
+                    } // if: has transaction log?
+
+                    Message("\tSet multiuser");
+                    RunSQL(dest_con, string.Format(@"ALTER DATABASE[{0}] SET MULTI_USER", dest_dbname));
+                    //cmd.CommandText = string.Format(@"ALTER DATABASE[{0}] SET MULTI_USER", dest_dbname);
+                    //cmd.ExecuteNonQuery();
+
+                    // Clean up after ourselves
+                    System.IO.File.Delete(string.Format(@"{0}\{1}.bak", save_to, src_dbname));
+                    if (System.IO.File.Exists(string.Format(@"{0}\{1}.bak", read_from, dest_dbname)))
+                        System.IO.File.Delete(string.Format(@"{0}\{1}.bak", read_from, dest_dbname));
+
+                    // Extras
+                    if (setPIPESperms) ApplyPIPESperms(dest_con, dest_dbname);
+
+                } // try
                 catch (Exception ex)
                 {
-                    ret = false;
-                    Message("Error connecting to destination instance: " + ex.ToString());
-                }
-            } // if: connected to source instance?
+                    ret = 100;  // General exception
+                    Message("Error restoring destination database: " + ex.ToString());
+                } // catch
+            } // if: is ok?
 
             return ret;
-        } // SqlConnect
+        } // CopyDatabase
 
-        /// <summary>Centralized messaging</summary>
-        /// <param name="msg"></param>
-        private static void Message(string msg)
-        {
-            Console.WriteLine(msg);
-        }
+        #endregion
+
+
     } // class
 } // namespace
