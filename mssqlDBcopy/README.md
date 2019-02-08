@@ -114,7 +114,7 @@ Feel free to contact me with questions, problems, etc.  Note, however, that I ma
 
 ## Examples
 
-This command line was used to refresh a dev copy of a database from production.  The tricky part is the development box was locked down by some security software, so accessing the administrative share (\\devsql\c$) is not possible.
+This command line was used to refresh a dev copy of a database from production.  The tricky part is the development box was locked down by some security software, so accessing the administrative share (\\\\devsql\c$) is not possible.
 `mssqldbcopy prodsql:pipes devsql:PIPES_TEST /debug /save_to=c:\temp /copy_from=\\prodsql\c$\temp /copy_to=\\storage\User\dba /read_from=\\storage\User\dba /pipesperms /cleanup /replace`
 
 There are four network nodes involved:
@@ -122,11 +122,12 @@ There are four network nodes involved:
 * DEVSQL - the development SQL Server instance, which contains a developer copy which needs to be updated
 * STORAGE - our SAN, available to domain users
 * The computer I'm running the MSSQLDBCOPY command from (a Windows 10 Professional box on the same domain as the two SQL Server instances and the SAN)
+
 This is what the command does, step by step:
 1. take a backup of the PIPES database on PRODSQL and put it in c:\temp on PRODSQL
 1. copy the resulting BAK file from PRODSQL to a folder on the SAN
 1. the PIPES_TEST database on DEVSQL is set to single-user mode and dropped
 1. DEVSQLA restores the backup file from the SAN
 1. a pre-configured set of permissions is applied to the newly-updated database
-1. finally the BAK files (the one on PRODSQL in c:\temp and the one in \\storage\User\dba) are all deleted
+1. finally the BAK files (the one on PRODSQL in c:\temp and the one in \\\\storage\User\dba) are all deleted
 
