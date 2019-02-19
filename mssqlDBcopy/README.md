@@ -46,7 +46,7 @@ This was made to simplify applying permissions to the database and is included h
 Use this option to delete the BAK files created by the transfer process.  By default, they are not deleted.
 
 #### /KILL
-If you're having trouble replacing a database using the /REPLACE switch, you can add this one to force the issue.  This will find all open sessions attached to the destination database and kill them.  **_It is better to gracefully disconnect whatever is using the database, rather than forcing a disconnection because doing so could lead to data loss and application instability.  DO NOT USE THIS SWITCH UNLESS YOU ABSOLUTELY HAVE TO!_**
+If you're having trouble replacing a database using the /REPLACE switch, you can add this one to force the issue.  This will find all open sessions attached to the destination database and kill them.  **_It is better to gracefully disconnect whatever is using the database, rather than forcing a disconnection because doing so could lead to data loss and application instability.  DO NOT USE THIS SWITCH UNLESS YOU ABSOLUTELY HAVE TO!_**  Note you must supply the /REPLACE switch if you use /KILL - it doesn't make sense to kill sessions for a database that doesn't yet exist.  At the same time, you can supply /REPLACE without /KILL (which is encouraged - do not use /KILL unless you absolutely must).
 
 #### Instance credentials
 If you don't specify credentials, the program will use your current credentials and pass them on to the source and destination.  Note you do not have to specify credentials for BOTH - you can do one, the other, both, or neither.
