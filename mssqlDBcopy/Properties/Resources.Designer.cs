@@ -86,6 +86,32 @@ namespace mssqlDBcopy.Properties {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to declare @foo table (
+        ///	spid int,
+        ///	status varchar(200),
+        ///	login  varchar(200),
+        ///	hostname  varchar(200),
+        ///	blkby  varchar(200),
+        ///	dbname  varchar(max),
+        ///	command  varchar(max),
+        ///	cputime int,
+        ///	diskio int,
+        ///	lastbatch varchar(max),
+        ///	programname  varchar(max),
+        ///	spid2 int,
+        ///	requestid int
+        ///);
+        ///insert into @foo exec sp_who2;
+        ///
+        ///select spid from @foo where dbname = &apos;{DBNAME}&apos;;.
+        /// </summary>
+        internal static string find_to_kill {
+            get {
+                return ResourceManager.GetString("find_to_kill", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to alter user [epims_admin] with login=[epims_admin]
         ///alter user [pipes_user] with login=[pipes_user]
         ///alter user [pipes_reports] with login=[pipes_reports]

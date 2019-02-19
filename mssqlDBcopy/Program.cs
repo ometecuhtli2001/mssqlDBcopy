@@ -10,7 +10,7 @@ namespace mssqlDBcopy
 {
     class Program
     {
-        private static string logfile = "mssqldbcopy.log"; // Log file for output (regular and debug)
+        private static string logfile = @"c:\temp\mssqldbcopy.log"; // Log file for output (regular and debug)
 
         // Source and destination information
         private static string src_instance;
@@ -48,8 +48,9 @@ namespace mssqlDBcopy
         private static bool dest_overwrite = false;     // Safety first!
         private static bool debug = false;              // Debug mode (defaults to off)
         private static bool cleanup = false;            // Clean up backup files (defaults to no)
+        private static bool killswitch = false;         // User specified /KILL ?
+        private static bool nop = false;                // If true, go through the motions but don't execute any BACKUP/RESTORE/KILL
 
-        private static bool nop = false;    // If true, do nothing - just parse command line args and exit
         static int Main(string[] args)
         {
             int ret = 0;    // Be optimistic
@@ -107,7 +108,8 @@ namespace mssqlDBcopy
                                         if (copy_from != "") proceed = CopyFiles(copy_from, src_dbname, copy_to);   // If files need copying, do it now
                                         if (proceed)
                                         {
-                                            if (dest_overwrite) proceed = DropDestDB(dest_con, dest_dbname); // Drop the destination DB to be replaced only once the files are safely within the instance's range for restore operations
+                                            if (killswitch) proceed = Kill(dest_con, dest_dbname);
+                                            if (proceed && dest_overwrite) proceed = DropDestDB(dest_con, dest_dbname); // Drop the destination DB to be replaced only once the files are safely within the instance's range for restore operations
                                             if (proceed) ret = PutDestData(dest_con, dest_dbname, read_from, backuplog, src_dbname);
 
                                             if (ret == 0)
@@ -217,6 +219,13 @@ namespace mssqlDBcopy
                 Message("You must specify both /COPY_FROM and /COPY_TO.");
             } // if: COPY_FROM and COPY_TO check
 
+            // Was the kill switch indicated, but not the replace switch?  This doesn't make sense - why kill connections if there's no database to replace?
+            //  The reverse though is okay - you can specify the replace switch without specifying the kill switch.
+            if(killswitch && !dest_overwrite)
+            {
+                Message("You specified the kill switch but did not indicate the destination database should be overwritten.  To ensure safety, this utility will now exit.");
+                ret = 100;
+            } // if: kill but no replace?
             return ret;
         } // DoArgumentsMakeSense
 
@@ -278,6 +287,10 @@ namespace mssqlDBcopy
                         break;
                     case "/CLEANUP":
                         cleanup = true;
+                        break;
+                    case "/KILL":
+                        killswitch = true;
+                        DebugMessage("KILL SWITCH SPECIFIED");
                         break;
                 } // switch: sw
 
@@ -342,6 +355,86 @@ namespace mssqlDBcopy
         #endregion
 
         #region "Support"
+
+        private static bool Kill(SqlConnection dest, string destdb)
+        {
+            bool ret = true; // Be optimistic!
+            string act = "";
+
+            DebugMessage(string.Format("Kill({0},{1})", dest.DataSource, destdb));
+
+            try
+            {
+                act = "retrieving kill switch SQL";
+                string sql = Properties.Resources.find_to_kill;
+                sql = sql.Replace("{DBNAME}", destdb);  // Fill in the name of the destination database
+
+                List<int> spids = new List<int>();
+
+                // Get a list of SPIDs to kill - do it this way because otherwise .Net whines about a datareader being open
+                using (SqlCommand cmd = dest.CreateCommand())
+                {
+                    cmd.CommandText = sql;
+
+                    act = "getting sessions to kill";
+                    SqlDataReader rdr = cmd.ExecuteReader();
+                    if (rdr.HasRows)
+                    {
+                        act = "getting SPID";
+                        while (rdr.Read())
+                        {
+                            int spid;
+                            act = String.Format("converting '{0}' to an INT", rdr["spid"].ToString());
+                            spid = int.Parse(rdr["spid"].ToString());
+                            spids.Add(spid);
+                        } // while
+                    } // if: are there rows?
+                    act = "closing reader";
+                    rdr.Close();
+                } // SqlCommand: cmd
+
+                // Now kill each one
+                using (SqlCommand killcmd = dest.CreateCommand())
+                {
+                    foreach (int spid in spids)
+                    {
+                        killcmd.CommandText = string.Format("KILL {0}",spid);
+                        act = String.Format("killing session {0}", spid);
+                        DebugMessage("\t" + act);
+                        killcmd.ExecuteNonQuery();
+                    } // foreach: spid
+                } // SqlCommand: killcmd
+
+/*              // This is how I wanted to do it, but apparently you cannot use parameterization when calling KILL
+                using (SqlCommand killcmd = dest.CreateCommand())
+                {
+                    killcmd.CommandText = "KILL @spid";
+                    killcmd.Parameters.Add(new SqlParameter("@spid", System.Data.SqlDbType.Int));
+                    act = "preparing kill command";
+                    killcmd.Prepare();
+
+                    foreach(int spid in spids)
+                    {
+                        act = string.Format("setting parameter value to {0}",spid);
+                        killcmd.Parameters["@spid"].Value = spid;
+                        act = "adding parameter to command";
+                        act = String.Format("killing session {0}", spid);
+                        DebugMessage("\t" + act);
+                        killcmd.ExecuteNonQuery();  // Get an invalid syntax 'KILL @spid' error here
+                    } // foreach: spid
+                } // SqlCommand: killcmd
+*/
+            } // try
+            catch (Exception ex)
+            {
+                DebugMessage(string.Format("Error {0}: {1}", act, ex.ToString()));
+                ret = false;
+            } // catch
+
+            DebugMessage(string.Format("Kill = {0}", ret.ToString()));
+
+            return ret;
+        } // Kill
 
         /// <summary>Clean up after ourselves</summary>
         /// <param name="copy_from"></param>

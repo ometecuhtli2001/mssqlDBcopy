@@ -198,4 +198,24 @@ EXEC sp_addrolemember N'show_plan', N'sandist\bwood'
 EXEC sp_addrolemember N'show_plan', N'sandist\mlimjuico'
 -- EXEC sp_addrolemember N'show_plan', N'sandist\mhripko'</value>
   </data>
+  <data name="find_to_kill" xml:space="preserve">
+    <value>declare @foo table (
+	spid int,
+	status varchar(200),
+	login  varchar(200),
+	hostname  varchar(200),
+	blkby  varchar(200),
+	dbname  varchar(max),
+	command  varchar(max),
+	cputime int,
+	diskio int,
+	lastbatch varchar(max),
+	programname  varchar(max),
+	spid2 int,
+	requestid int
+);
+insert into @foo exec sp_who2;
+
+select spid from @foo where dbname = '{DBNAME}';</value>
+  </data>
 </root>

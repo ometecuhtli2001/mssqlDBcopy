@@ -45,6 +45,9 @@ This was made to simplify applying permissions to the database and is included h
 #### /CLEANUP
 Use this option to delete the BAK files created by the transfer process.  By default, they are not deleted.
 
+#### /KILL
+If you're having trouble replacing a database using the /REPLACE switch, you can add this one to force the issue.  This will find all open sessions attached to the destination database and kill them.  **_It is better to gracefully disconnect whatever is using the database, rather than forcing a disconnection because doing so could lead to data loss and application instability.  DO NOT USE THIS SWITCH UNLESS YOU ABSOLUTELY HAVE TO!_**
+
 #### Instance credentials
 If you don't specify credentials, the program will use your current credentials and pass them on to the source and destination.  Note you do not have to specify credentials for BOTH - you can do one, the other, both, or neither.
 
@@ -126,7 +129,7 @@ There are four network nodes involved:
 This is what the command does, step by step:
 1. take a backup of the PIPES database on PRODSQL and put it in c:\temp on PRODSQL
 1. copy the resulting BAK file from PRODSQL to a folder on the SAN
-1. the PIPES_TEST database on DEVSQL is set to single-user mode and dropped
+1. the PIPES_TEST database on DEVSQL is set to single-user mode and dropped, and the database's backup history is cleared (the reasoning here is the previous backups don't really matter if the database is being replaced)
 1. DEVSQLA restores the backup file from the SAN
 1. a pre-configured set of permissions is applied to the newly-updated database
 1. finally the BAK files (the one on PRODSQL in c:\temp and the one in \\\\storage\User\dba) are all deleted
