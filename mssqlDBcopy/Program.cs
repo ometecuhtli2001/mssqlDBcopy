@@ -10,7 +10,7 @@ namespace mssqlDBcopy
 {
     class Program
     {
-        private static string logfile = @"c:\temp\mssqldbcopy.log"; // Log file for output (regular and debug)
+        private static string logfile = "mssqldbcopy.log"; // Log file for output (regular and debug)
 
         // Source and destination information
         private static string src_instance;
@@ -59,7 +59,7 @@ namespace mssqlDBcopy
             if (args.Length < 2)
             {
                 Console.WriteLine("Please specify a source instance and database followed by a target instance and database. Options come after that.");
-                Console.WriteLine("\tmssqldbcopy source-instance:database target-instance:database [/REPLACE|/PIPESPERMS|/CLEANUP][/SRC_CREDS:user:pass][/DEST_CREDS:user:pass][[/PATH=holding-path]|[/BACKUP_TO=source-holding-path /RESTORE_FROM=destination-holding-path]]");
+                Console.WriteLine("\tmssqldbcopy source-instance:database target-instance:database [/REPLACE|/PIPESPERMS|/CLEANUP|/KILL][/SRC_CREDS:user:pass][/DEST_CREDS:user:pass][[/PATH=holding-path]|[/BACKUP_TO=source-holding-path /RESTORE_FROM=destination-holding-path]][/LOG=log-file]");
                 Console.WriteLine();
                 Console.WriteLine("Note if you specify /PATH applied to both source and destination, so you cannot specify /BACKUP_TO or /RESTORE_FROM with /PATH.  Likewise, /BACKUP_TO and /RESTORE_FROM go together - you must specify both, and then you cannot use /PATH.");
                 Console.WriteLine();
@@ -68,7 +68,14 @@ namespace mssqlDBcopy
             {
                 // Check for debug mode and turn it on - do this as early as possible so command line parsing debug messages show up if needed
                 foreach(string s in args)
+                {
                     if (s.ToUpper() == "/DEBUG") debug = true;
+                    if (s.ToUpper().StartsWith("/LOG="))
+                    {
+                        logfile = s.Split('=')[1];
+                        if (logfile == "") logfile = "mssqlDBcopy.log"; // Revert if the log file pathspec is empty
+                    } // if: change log file
+                } // foreach
 
                 //proceed = GetEnvVars(); // Get settings from environment variables
 
@@ -226,6 +233,7 @@ namespace mssqlDBcopy
                 Message("You specified the kill switch but did not indicate the destination database should be overwritten.  To ensure safety, this utility will now exit.");
                 ret = 100;
             } // if: kill but no replace?
+
             return ret;
         } // DoArgumentsMakeSense
 
@@ -294,8 +302,8 @@ namespace mssqlDBcopy
                         break;
                 } // switch: sw
 
-                // Arguments using an equl sign (i.e., /ARG=value)
-                foreach (string arg in new string[] { "/PATH", "/SAVE_TO", "/COPY_FROM", "/COPY_TO", "/READ_FROM", })
+                // Arguments using an equal sign (i.e., /ARG=value)
+                foreach (string arg in new string[] { "/PATH", "/SAVE_TO", "/COPY_FROM", "/COPY_TO", "/READ_FROM" })
                 {
                     if (sw.ToUpper().StartsWith(arg))
                     {
@@ -356,6 +364,10 @@ namespace mssqlDBcopy
 
         #region "Support"
 
+        /// <summary>Forcefully disconnect sessions monopolizing the destination database - WARNING - DANGEROUS!</summary>
+        /// <param name="dest"></param>
+        /// <param name="destdb"></param>
+        /// <returns></returns>
         private static bool Kill(SqlConnection dest, string destdb)
         {
             bool ret = true; // Be optimistic!
@@ -597,9 +609,9 @@ namespace mssqlDBcopy
             if (debug) Console.WriteLine(msg);
             try
             {
-                System.IO.File.AppendAllText(logfile, string.Format("DEBUG: {0}\n", msg));
+                System.IO.File.AppendAllText(logfile, string.Format("DEBUG: {0}{1}", msg,Environment.NewLine));
             } // try
-            catch (Exception ex)
+            catch (Exception)
             {
                 // Do nothing - if there's an error logging debugging output another developer can do something here if they choose.
             } // catch
@@ -609,17 +621,17 @@ namespace mssqlDBcopy
         /// <param name="msg"></param>
         private static void Message(string msg)
         {
+            Console.WriteLine(msg);
+
             try
             {
-                System.IO.File.AppendAllText(logfile, msg + "\n");
+                System.IO.File.AppendAllText(logfile, String.Format("{0}{1}",msg,Environment.NewLine));
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // Do nothing - if there's an error logging output another developer can do something here if they choose.
             } // catch
-
-            Console.WriteLine(msg);
-        }
+        } // Message
 
         #endregion
 
