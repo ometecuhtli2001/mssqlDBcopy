@@ -19,6 +19,11 @@ This was written using Visual Studio 2017.
 If running from a debugger, the utility will say `Done!` when it's done, then wait for a keypress.  I did this so I could actually see the output while running from Visual Studio.
 Messages are output to STDOUT and to a text file named mssqldbcopy.log This text file is created in the current directory.
 
+## Known issues
+* This utility will not work on databases that use In-Memory OLTP tables (or native functions/stored procedures most likely) because it doesn't know what to do with the filestream data file group.
+* Database names and really fancy passwords may be a problem on the command line.  YMMV
+* There are indications this utility returns a 0 (success) return code even if it runs into problems - this is under investigation
+
 ## Arguments
 On the command line, you specify a source instance and database followed by a target instance and database, with options after that.  Source and destination instance and database are each separated by a colon, so you have source-instance:source-database target-instance:target-database
 
