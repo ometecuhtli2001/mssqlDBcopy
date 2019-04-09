@@ -45,7 +45,7 @@ This takes into account the different ways Windows and Linux refer to the same s
 Specify this if the destination already contains a database by the same name.  This will attempt to knock anyone using it off, then drop the database before restoring the copy from the source instance. If there are long-running transactions, this will eventually time out and the entire operation will fail.
 
 #### /PIPESPERMS
-This was made to simplify applying permissions to the database and is included here to show how additional permission sets for other databases would be added.  Admitedly, I took the easy way out in implementing this because I figured this would be the only set of permissions I'd have to implement.  All it does is throw a bunch of T-SQL at the database, so if you have any post-installation tasks to do at the destination you can automate them here.
+This was made to simplify applying permissions to the database and is included here to show how additional permission sets for other databases would be added.  Admittedly, I took the easy way out in implementing this because I figured this would be the only set of permissions I'd have to implement.  All it does is throw a bunch of T-SQL at the database, so if you have any post-installation tasks to do at the destination you can automate them here.
 
 #### /CLEANUP
 Use this option to delete the BAK files created by the transfer process.  By default, they are not deleted.
@@ -57,7 +57,7 @@ If you're having trouble replacing a database using the /REPLACE switch, you can
 Specify the location and name of the log file. `/LOG=c:\temp\dbtransferator.log` will output log data to c:\temp\dbtransferator.log  Likewise, in Linux you should be able to say `/LOG=/tmp/DBcopy.log` to direct the log to /tmp/DBcopy.log (Keep in mind Linux filesystems are usually case-sensitive.)
 
 #### /MAILLOG
-E-mail the log to the specified address.  The syntax for this switch is /MAILLOG=recipient-address:SMTP-server  Note this depends on the setting for /LOG so it would be a bad idea to redirect the log to /dev/null or the Windows equivalent!
+E-mail the log to the specified address.  The syntax for this switch is /MAILLOG:recipient-address:SMTP-server  Note this depends on the setting for /LOG so it would be a bad idea to redirect the log to /dev/null or the Windows equivalent!
 
 #### Instance credentials
 If you don't specify credentials, the program will use your current credentials and pass them on to the source and destination.  Note you do not have to specify credentials for BOTH - you can do one, the other, both, or neither.
