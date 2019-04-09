@@ -55,6 +55,10 @@ If you're having trouble replacing a database using the /REPLACE switch, you can
 
 #### /LOG
 Specify the location and name of the log file. `/LOG=c:\temp\dbtransferator.log` will output log data to c:\temp\dbtransferator.log  Likewise, in Linux you should be able to say `/LOG=/tmp/DBcopy.log` to direct the log to /tmp/DBcopy.log (Keep in mind Linux filesystems are usually case-sensitive.)
+
+#### /MAILLOG
+E-mail the log to the specified address.  The syntax for this switch is /MAILLOG=recipient-address:SMTP-server  Note this depends on the setting for /LOG so it would be a bad idea to redirect the log to /dev/null or the Windows equivalent!
+
 #### Instance credentials
 If you don't specify credentials, the program will use your current credentials and pass them on to the source and destination.  Note you do not have to specify credentials for BOTH - you can do one, the other, both, or neither.
 

@@ -5,12 +5,14 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Data.SqlClient;
 using System.Diagnostics;
+using System.Net.Mail;
 
 namespace mssqlDBcopy
 {
     class Program
     {
-        private static string logfile = "mssqldbcopy.log"; // Log file for output (regular and debug)
+        private static bool keeplog = false;                // Do not keep the log file from previous executions
+        private static string logfile = "mssqldbcopy.log";  // Log file for output (regular and debug)
 
         // Source and destination information
         private static string src_instance;
@@ -21,6 +23,9 @@ namespace mssqlDBcopy
         private static string dest_dbname;
         private static string dest_user = "";   // Blank if using current user context (default)
         private static string dest_pass = "";
+
+        private static string mail_recipient="";    // For mailing of log
+        private static string mail_server="";
 
         private static SqlConnection src_con;   // Source instance connection
         private static SqlConnection dest_con;  // Target instance connection
@@ -100,6 +105,7 @@ namespace mssqlDBcopy
                 }
                 else
                 {
+                    if (!keeplog) DeleteOldLog(logfile);
                     if (SqlConnect())
                     {
                         if (SourceDBexists(src_con, src_dbname))    // Does the source DB exist in the source instance?
@@ -142,6 +148,28 @@ namespace mssqlDBcopy
                     } // if: SqlConnect
                 } // if..else: passed argument sanity check?
             } // if..else: proper parameter count?
+
+            // Mail the log at this point, if requested
+            if((mail_server !="") && (mail_recipient != "")){
+			    using (MailMessage mailMessage = new MailMessage(mail_recipient, mail_recipient))
+			    {
+				    using (SmtpClient smtpClient = new SmtpClient())
+				    {
+					    smtpClient.Host = mail_server;
+					    mailMessage.Subject = "MSSQL DB copy";
+					    mailMessage.IsBodyHtml = false;
+                        try
+                        {
+                            mailMessage.Body = System.IO.File.ReadAllText(logfile);
+                        } // try
+                        catch (Exception ex)
+                        {
+                            mailMessage.Body = "Error reading log file to e-mail: " + ex.ToString();
+                        } // catch
+					    smtpClient.Send(mailMessage);
+				    } // using: SmtpClient
+			    } // using: MailMessage
+            } // if: mail log?
 
             if (Debugger.IsAttached)
             {
@@ -299,6 +327,18 @@ namespace mssqlDBcopy
                     case "/KILL":
                         killswitch = true;
                         DebugMessage("KILL SWITCH SPECIFIED");
+                        break;
+                    case "/MAILLOG":
+                        try
+                        {
+                            mail_recipient = sw.Split(':')[1];
+                            mail_server = sw.Split(':')[2];
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("Error parsing log mail settings: make sure it is in the format recipient-address:SMTP-server\nExiting as a precaution.\nError: " + ex.ToString());
+                            nop = true;
+                        }
                         break;
                 } // switch: sw
 
@@ -606,15 +646,18 @@ namespace mssqlDBcopy
         /// <param name="msg"></param>
         private static void DebugMessage(string msg)
         {
-            if (debug) Console.WriteLine(msg);
-            try
+            if (debug)
             {
-                System.IO.File.AppendAllText(logfile, string.Format("DEBUG: {0}{1}", msg,Environment.NewLine));
-            } // try
-            catch (Exception)
-            {
-                // Do nothing - if there's an error logging debugging output another developer can do something here if they choose.
-            } // catch
+                Console.WriteLine(msg);
+                try
+                {
+                    System.IO.File.AppendAllText(logfile, string.Format("DEBUG: {0}{1}", msg, Environment.NewLine));
+                } // try
+                catch (Exception)
+                {
+                    // Do nothing - if there's an error logging debugging output another developer can do something here if they choose.
+                } // catch
+            } // if: debug mode on?
         } // DebugMessage
 
         /// <summary>Centralized messaging</summary>
@@ -632,6 +675,20 @@ namespace mssqlDBcopy
                 // Do nothing - if there's an error logging output another developer can do something here if they choose.
             } // catch
         } // Message
+
+        /// <summary>Delete the old log file</summary>
+        /// <param name="logfile"></param>
+        private static void DeleteOldLog(string logfile)
+        {
+            try
+            {
+                if (System.IO.File.Exists(logfile)) System.IO.File.Delete(logfile);
+            }
+            catch(Exception ex)
+            {
+                Message(string.Format("Error deleting old log file {0}: {1}", logfile, ex.ToString()));
+            }
+        } // DeleteOldLog
 
         #endregion
 
