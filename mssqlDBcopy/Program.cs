@@ -11,6 +11,16 @@ namespace mssqlDBcopy
 {
     class Program
     {
+        /// <summary>Contains results of a RESTORE FILELISTONLY call</summary>
+        private struct stFileListEntry
+        {
+            public string logicalname;
+            public string physicalname;
+            public string type;
+            public string filegroupname;
+
+        } // stFileList
+
         private static bool keeplog = false;                // Do not keep the log file from previous executions
         private static string logfile = "mssqldbcopy.log";  // Log file for output (regular and debug)
 
@@ -33,8 +43,8 @@ namespace mssqlDBcopy
         private static string MDFdir = "";      // Where source MDF file(s) live
         private static string LDFdir = "";      // Where source LDF file(s) live
         private static int backuplog = 0;       // Flag indicating if there's a transaction log for the specified DB
-        private static string logicalname_d = "";   // Logical name of database file
-        private static string logicalname_l = "";   // Logcial name of transaction log file
+        //private static string logicalname_d = "";   // Logical name of database file
+        //private static string logicalname_l = "";   // Logcial name of transaction log file
 
         /* Separate variables for the holding path because the source and destination instances can refer to the same place 
          * in different ways.  Note that if an instance is on Linux, and the holding area is not local to that box, it must
@@ -60,6 +70,8 @@ namespace mssqlDBcopy
         {
             int ret = 0;    // Be optimistic
             bool proceed;   // Okay to proceed to next section
+
+            List<stFileListEntry> files = new List<stFileListEntry>();  // File list of database to be copied
 
             if (args.Length < 2)
             {
@@ -115,7 +127,7 @@ namespace mssqlDBcopy
                                 backuplog = HasTLog(src_con, src_dbname);   // Check if DB needs an explicity transaction log backup
                                 if (backuplog != -1)
                                 {
-                                    ret= GetSourceData(src_con, src_dbname, save_to,backuplog); // Get a copy of the source data
+                                    ret= GetSourceData(src_con, src_dbname, save_to,backuplog,out files); // Get a copy of the source data
                                     if (ret==0)
                                     {
                                         if (copy_from != "") proceed = CopyFiles(copy_from, src_dbname, copy_to);   // If files need copying, do it now
@@ -123,7 +135,7 @@ namespace mssqlDBcopy
                                         {
                                             if (killswitch) proceed = Kill(dest_con, dest_dbname);
                                             if (proceed && dest_overwrite) proceed = DropDestDB(dest_con, dest_dbname); // Drop the destination DB to be replaced only once the files are safely within the instance's range for restore operations
-                                            if (proceed) ret = PutDestData(dest_con, dest_dbname, read_from, backuplog, src_dbname);
+                                            if (proceed) ret = PutDestData(dest_con, dest_dbname, read_from, backuplog, src_dbname, files);
 
                                             if (ret == 0)
                                             {
@@ -698,10 +710,12 @@ namespace mssqlDBcopy
         /// <param name="src_dbname">Name of the DB on the soruce instance to copy</param>
         /// <param name="save_to">Write the backup file(s) here from the perspective of the source instance</param>
         /// <param name="backuplog">1=there's a transaction log to include in the backup</param>
+        /// <param name="files">List of files in the database, retrieved by calling GetFileList()</param>
         /// <returns>0=success, nonzero=error</returns>
-        private static int GetSourceData(SqlConnection src_con, string src_dbname, string save_to, int backuplog)
+        private static int GetSourceData(SqlConnection src_con, string src_dbname, string save_to, int backuplog, out List<stFileListEntry> files)
         {
             int ret = 0;    // Be optimistic!
+            files = null;
 
             DebugMessage(string.Format("GetSourceData({0},{1},{2},{3})", src_con.DataSource, src_dbname, save_to, backuplog));
 
@@ -736,31 +750,17 @@ namespace mssqlDBcopy
 
             if (ok)
             {
-                DebugMessage(string.Format(@"Call GetLogicalNames({0},{1}\{2}.bak)", src_con.DataSource, save_to, src_dbname));
-                string tmp = "";
+                DebugMessage(string.Format(@"Call GetFileList({0},{1}\{2}.bak)", src_con.DataSource, save_to, src_dbname));
 
                 // Getting the logical names this way avoids errors when in no operation mode because there won't be a backup file to read
-                if (!nop) tmp = GetLogicalNames(src_con, string.Format(@"{0}\{1}.bak", save_to, src_dbname)); // save_to
-                DebugMessage("GetLogicalNames result=" + tmp);
+                if (!nop) files = GetFileList(src_con, string.Format(@"{0}\{1}.bak", save_to, src_dbname)); // save_to
+                DebugMessage(string.Format("GetFileList found {0} files",files.Count));
 
-                if (tmp != "")
-                {
-                    if (tmp.Contains("|"))
-                    {
-                        logicalname_d = tmp.Split('|')[0];
-                        logicalname_l = tmp.Split('|')[1];
-                    }
-                    else
-                    {
-                        logicalname_d = tmp;
-                    } // if..else: how many logical names?
-                }
-                else
-                {
+                if ((files !=null) && (files.Count == 0)) { 
                     ok = false;
-                    ret = 3;    // Logical names not obtained successfully
-                } // if..else: got logical names?
-            } // if: okay to obtain logical names?
+                    ret = 3;    // File list not obtained successfully
+                } // if..else: got file list?
+            } // if: okay to obtain file list?
 
             if (nop) ret = 0;    // Force an all clear if we're running in no operation mode
 
@@ -774,7 +774,7 @@ namespace mssqlDBcopy
         /// <param name="backuplog"></param>
         /// <param name="bak_name"></param>
         /// <returns>0=success, nonzero=error code</returns>
-        private static int PutDestData(SqlConnection dest_con, string dest_dbname, string read_from, int backuplog, string bak_name)
+        private static int PutDestData(SqlConnection dest_con, string dest_dbname, string read_from, int backuplog, string bak_name, List<stFileListEntry> filelist)
         {
             int ret = 0;
             string sql = "";
@@ -789,23 +789,25 @@ namespace mssqlDBcopy
                 //cmd.CommandText = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  REPLACE,  STATS = 5", dest_dbname, MDFdir, LDFdir, src_dbname,logicalname_d,logicalname_l,holdingpath);
                 //cmd.ExecuteNonQuery();
 
-                sql = string.Format(@"RESTORE DATABASE[{0}] FROM DISK = N'{6}\{3}.bak' WITH FILE = 1, MOVE N'{4}' TO N'{1}{0}.mdf', MOVE N'{5}' TO N'{2}{0}_log.ldf', NORECOVERY,  NOUNLOAD,  !REPL!STATS = 5",
+                sql = string.Format(@"RESTORE DATABASE[{0}] 
+                    FROM DISK = N'{2}\{1}.bak' WITH FILE = 1, 
+                    [!MOVES!],
+                    NORECOVERY,  NOUNLOAD,  [!REPL!]STATS = 5",
+
                     dest_dbname,        // 0
-                    MDFdir,             // 1
-                    LDFdir,             // 2
-                    bak_name,           // 3
-                    logicalname_d,      // 4
-                    logicalname_l,      // 5
-                    read_from           // 6
+                    bak_name,           // 1
+                    read_from           // 2
                     );
                 if (dest_overwrite)
                 {    // Don't use REPLACE if we're not actually replacing a database!
-                    sql = sql.Replace("!REPL!", "REPLACE, ");
+                    sql = sql.Replace("[!REPL!]", "REPLACE, ");
                 }
                 else
                 {
-                    sql = sql.Replace("!REPL!", "");
+                    sql = sql.Replace("[!REPL!]", "");
                 } // if..else: use REPLACE?
+                sql = sql.Replace("[!MOVES!]", FileMoves(filelist, MDFdir, LDFdir,dest_dbname));
+
                 if (backuplog != 1) sql = sql.Replace(", NORECOVERY,", ", RECOVERY,"); // No transaction log, so this is the only RESTORE to run
                 DebugMessage(sql);
                 if (!nop) RunSQL(dest_con, sql); // Run the RESTORE DATABASE
@@ -993,7 +995,7 @@ namespace mssqlDBcopy
             return ret;
         } // GetDefaultDirs
 
-        /// <summary>Check if the specified database needs has a transaction log to include in the backup</summary>
+        /// <summary>Check if the specified database has a transaction log to include in the backup</summary>
         /// <param name="con">Connection to the database instance</param>
         /// <param name="src_dbname">Name of the database to check for a transaction log</param>
         /// <returns>1=yes, it has a transaction log, 0=no, there's no transaction log, -1=error</returns>
@@ -1059,15 +1061,14 @@ namespace mssqlDBcopy
             return ret;
         } // SourceDBexists
 
-        /// <summary>Returns the logical names for database and transaction log</summary>
+        /// <summary>Returns the list of files that make up the database</summary>
         /// <param name="con">A connection to a SQL instance to process the request</param>
         /// <param name="backupfile">The backup file from which to obtain the logical names</param>
         /// <returns>Success: data-logical-name|transaction-log-logical-name  Error: a blank string</returns>
-        private static string GetLogicalNames(SqlConnection con, string backupfile)
+        /// <remarks>A database can contain more than just data and transaction logs, such as full text indexes and filestream/filetable/in-memory OLTP containers</remarks>
+        private static List<stFileListEntry> GetFileList(SqlConnection con, string backupfile)
         {
-            string ret = "";
-            string d = "";
-            string l = "";
+            List<stFileListEntry> ret = new List<stFileListEntry>();
 
             DebugMessage(string.Format("GetLogicalNames({0},{1})", con.DataSource, backupfile));
 
@@ -1081,35 +1082,70 @@ namespace mssqlDBcopy
                     {
                         while (rdr.Read())
                         {
-                            switch (rdr["type"])
-                            {
-                                case "D":
-                                    d = rdr["LogicalName"].ToString();
-                                    break;
-                                case "L":
-                                    l = rdr["LogicalName"].ToString();
-                                    break;
-                            } // switch: type
+                            stFileListEntry entry = new stFileListEntry();
+                            entry.filegroupname = rdr["FileGroupName"].ToString();
+                            entry.logicalname = rdr["LogicalName"].ToString();
+                            entry.physicalname = rdr["PhysicalName"].ToString();
+                            entry.type = rdr["Type"].ToString();
+                            ret.Add(entry);
                         } // while
                     } // if: rows returned?
                     rdr.Close();
                 } // using: SqlCommand
-
-                ret = (l != "") ? d + "|" + l : d;  // If there's no log, just return the logical name for the data
             } // try
             catch (Exception ex)
             {
-                Message(string.Format("Error getting logical names: {0}", ex.ToString()));
+                Message(string.Format("Error getting file list: {0}", ex.ToString()));
             } // catch
 
-            DebugMessage(string.Format("GetLogicalNames = {0}", ret));
+            DebugMessage(string.Format("GetFileList found {0} files", ret.Count));
             return ret;
-        } // GetLogicalNames
+        } // GetFileList
 
+        /// <summary>Build the MOVE clauses for the RESTORE statement</summary>
+        /// <param name="filelist">The list of files in the database</param>
+        /// <param name="mdfdir">Where MDF (and other non transaction log) files live in the target host</param>
+        /// <param name="ldfdir">Where transaction log files live in the target host</param>
+        /// <returns>success: a set of MOVE clauses; error: empty string</returns>
+        private static string FileMoves(List<stFileListEntry> filelist, string mdfdir, string ldfdir, string dbname)
+        {
+            // !!! Change the filename of each file to avoid collisions - use the destination DB name as a base
+            string ret = "";
+            List<string> moves = new List<string>();    // Holds all the MOVE clauses
+            string move = "";   // Holds the MOVE clause while it's being built
+            string physicalname = "";   // The full path of the file on the target server
+
+            DebugMessage(string.Format("FileMoves({0} files, {1}, {2})", filelist.Count, mdfdir, ldfdir));
+
+            foreach(stFileListEntry file in filelist)
+            {
+                // Build the full path for the file on the DESTINATION host/instance
+                physicalname = string.Format("{0}-{1}",
+                    dbname,
+                    System.IO.Path.GetFileName(file.physicalname));   // Isolate the MDF/LDF/NDF/whatever file and make it unique
+                switch (file.type)
+                {
+                    case "L":   // It's a transaction log
+                        physicalname = System.IO.Path.Combine(ldfdir, physicalname);
+                        break;
+                    default:    // It's something else: rowdata, filestream, etc.
+                        physicalname = System.IO.Path.Combine(mdfdir, physicalname);
+                        break;
+                } // switch: type of file
+                
+                move = string.Format("MOVE N'{0}' TO N'{1}'", file.logicalname, physicalname);
+                moves.Add(move);    // Add the new MOVE clause to the list
+            } // foreach
+
+            ret = string.Join(", ", moves.ToArray());    // Assemble the MOVE clauses into one string
+
+            DebugMessage(string.Format("FileMoves = {0}", ret));
+            return ret;
+        } // FileMoves
         #endregion
 
         #region "Deprecated"
-
+        /*
         /// <summary>Copies the database</summary>
         /// <param name="src_con"></param>
         /// <param name="src_dbname"></param>
@@ -1220,7 +1256,7 @@ namespace mssqlDBcopy
 
             return ret;
         } // CopyDatabase
-
+        */
         #endregion
 
 

@@ -20,7 +20,7 @@ If running from a debugger, the utility will say `Done!` when it's done, then wa
 Messages are output to STDOUT and to a text file named mssqldbcopy.log This text file is created in the current directory.
 
 ## Known issues
-* This utility will not work on databases that use In-Memory OLTP tables (or native functions/stored procedures most likely) because it doesn't know what to do with the filestream data file group.
+* This utility will not work on databases that use In-Memory OLTP tables (or native functions/stored procedures most likely) because it doesn't know what to do with the filestream data file group. [FIXED!]
 * Database names and really fancy passwords may be a problem on the command line.  YMMV
 * There are indications this utility returns a 0 (success) return code even if it runs into problems - this is under investigation
 
