@@ -163,6 +163,7 @@ namespace mssqlDBcopy
 
             // Mail the log at this point, if requested
             if((mail_server !="") && (mail_recipient != "")){
+                Message("Mail log");
 			    using (MailMessage mailMessage = new MailMessage(mail_recipient, mail_recipient))
 			    {
 				    using (SmtpClient smtpClient = new SmtpClient())
